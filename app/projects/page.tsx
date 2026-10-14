@@ -6,7 +6,6 @@ import { Search, FolderKanban, Eye, ChevronRight } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import { StatusBadge } from '@/components/shared'
 import { DetailDrawer } from '@/components/detail-drawer'
-import { CommunityOverview } from '@/components/community-panel'
 import { projects, slugify, parseBudgetCr, utilizationPct } from '@/lib/data'
 
 const NepalMapReal = dynamic(() => import('@/components/nepal-map-real').then(m => m.NepalMapReal), {
@@ -73,13 +72,6 @@ export default function ProjectsPage() {
     completed: projects.filter(p => p.status === 'Completed').length,
   }
 
-  const recentUpdates = useMemo(() => {
-    const all = projects.flatMap(p => (p.updates ?? []).map(u => ({ ...u, projectName: p.name, slug: slugify(p.name), category: p.category })))
-    return all
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 4)
-  }, [])
-
   return (
     <div className="content-wrap">
       <section className="full-panel panel">
@@ -93,7 +85,6 @@ export default function ProjectsPage() {
           </span>
         </div>
         <p className="section-intro">Click any project to inspect milestones, budget, spending, timeline, and source evidence.</p>
-        <CommunityOverview />
 
         {/* Progress overview */}
         <div
@@ -159,65 +150,6 @@ export default function ProjectsPage() {
           <div style={{ marginTop: '.75rem' }}>
             <NepalMapReal selected={provinceFilter} onSelect={setProvinceFilter} counts={provinceCounts} />
           </div>
-        )}
-
-        {recentUpdates.length > 0 && (
-          <section className="panel" style={{ marginTop: '.85rem', background: 'var(--bg-sunken)', borderStyle: 'dashed' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
-              <div>
-                <p className="eyebrow" style={{ margin: 0 }}>NEWS & UPDATES</p>
-                <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: '1.05rem', margin: '.15rem 0 0' }}>Recent updates</h3>
-                <p className="muted" style={{ marginTop: '.2rem' }}>Milestones, alerts and news from the timeline. Click to open project timeline.</p>
-              </div>
-              <Link href="/projects/map" style={{ fontSize: '.68rem', color: 'var(--accent)', fontWeight: 600, whiteSpace: 'nowrap' }}>Map view →</Link>
-            </div>
-            <div style={{ display: 'grid', gap: '.5rem', marginTop: '.65rem' }}>
-              {recentUpdates.map(u => (
-                <Link
-                  key={`${u.slug}-${u.date}-${u.title}`}
-                  href={`/projects/${u.slug}`}
-                  style={{
-                    display: 'flex',
-                    gap: '.6rem',
-                    alignItems: 'flex-start',
-                    padding: '.6rem .65rem',
-                    background: 'var(--bg-elevated)',
-                    border: '1px solid var(--border-light)',
-                    borderRadius: 8,
-                    textDecoration: 'none',
-                    color: 'inherit',
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: '.58rem',
-                      fontWeight: 700,
-                      letterSpacing: '.06em',
-                      textTransform: 'uppercase',
-                      padding: '.2rem .4rem',
-                      borderRadius: 20,
-                      background: u.type === 'Alert' ? 'var(--danger-light)' : u.type === 'Milestone' ? 'var(--accent-light)' : u.type === 'News' ? 'var(--warning-light)' : '#eff4ff',
-                      color: u.type === 'Alert' ? 'var(--danger)' : u.type === 'Milestone' ? 'var(--accent)' : u.type === 'News' ? 'var(--warning)' : '#3b82f6',
-                      whiteSpace: 'nowrap',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {u.type}
-                  </span>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ display: 'flex', gap: '.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                      <strong style={{ fontSize: '.76rem', lineHeight: 1.3 }}>{u.title}</strong>
-                      <span style={{ fontSize: '.64rem', color: 'var(--text-tertiary)' }}>· {u.date}</span>
-                    </div>
-                    <span style={{ display: 'block', fontSize: '.68rem', color: 'var(--text-secondary)', marginTop: '.15rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {u.projectName} · {u.category}
-                    </span>
-                  </div>
-                  <ChevronRight size={13} style={{ color: 'var(--text-tertiary)', flexShrink: 0, marginTop: 2 }} />
-                </Link>
-              ))}
-            </div>
-          </section>
         )}
 
         <div style={{ display: 'flex', gap: '.75rem', alignItems: 'center', flexWrap: 'wrap', marginTop: '.75rem' }}>

@@ -36,8 +36,9 @@ Next.js 16.3.3 App Router + Turbopack, React 19, TypeScript 5.7 strict (`noEmit`
 - `components.json`: `style: base-nova`, `tailwind.css: app/globals.css`, `baseColor: neutral`, `cssVariables: true`
 
 ## Data fetching
-- `lib/api.ts:fetchWb` → `https://api.worldbank.org/v2/country/NPL/indicator/<code>?format=json&date=2018:2025` (30 indicators + `fetchImf` for 4 IMF `datamapper/api/v1/<code>/NPL` forecasts to 2030)
-- Other live sources: `lib/nepse.ts` → `shubhamnpk.github.io/yonepse` (`revalidate: 3600`), `lib/opendatanepal.ts` → `api.opendatanepal.com/api/3` (CKAN, 290+ datasets), `lib/project-nepal.ts` → `raw.githubusercontent.com/EverestValley/project-nepal`
+- `lib/api.ts:fetchWb` → `https://api.worldbank.org/v2/country/NPL/indicator/<code>?format=json&date=2018:2025` (36 indicators + `fetchImf` for 6 IMF `datamapper/api/v1/<code>/NPL` forecasts to 2030: growth, inflation, unemployment, current account, govt net debt `GGXWDN_NGDP`, fiscal balance `GGXCNL_NGDP`)
+- Other live sources: `lib/nepse.ts` → `shubhamnpk.github.io/yonepse` (`revalidate: 3600`), `lib/opendatanepal.ts` → `api.opendatanepal.com/api/3` (CKAN, 630 datasets), `lib/project-nepal.ts` → `raw.githubusercontent.com/EverestValley/project-nepal`
+- New: `lib/nrb.ts` → NRB official FOREX API `nrb.org.np/api/forex/v1/rates` (primary USD→NPR rate for `getLiveNprRate`, hourly); `lib/datanepal.ts` → `datanepal.org/data/*.json` (36 indicators, 862 places, 753 local units, census 2021 + ECN 2026 mirrors). NSO CKAN (`data.nsonepal.gov.np`) unreachable from server — use DataNepal mirror instead.
 - All use `fetch(..., { next: { revalidate: 86400 } })` except NEPSE (3600); handle `!res.ok` → `[]`
 - `formatNpr`/`formatUsd` use live WB exchange rate `PA.NUS.FCRF` with fallback `133.5` (`lib/api.ts:NPR_RATE`)
 
@@ -45,4 +46,3 @@ Next.js 16.3.3 App Router + Turbopack, React 19, TypeScript 5.7 strict (`noEmit`
 - Design tokens in `app/globals.css: :root` (`--bg`, `--accent`, `--border`, etc.); dark mode via `[data-theme="dark"]` and `@media (prefers-color-scheme: dark)` — update both
 - `components/charts.tsx`: SVG `<stop>` can't use CSS vars → `resolveColor()` via `getComputedStyle` after hydration; gradient `id` must be deterministic (`firstYear-lastYear-height-color`), no `Math.random()`; tooltip `zIndex: 2000` > modal `1000`
 - App Shell layout depends on `app-shell` flex column; `content-wrap` padding uses `clamp()`
-- Graphify knowledge graph exists at `graphify-out/` — run `graphify query "<q>"` / `path` / `explain` before broad grep; `graphify update .` after code changes

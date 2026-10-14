@@ -1,55 +1,17 @@
 'use client'
 
-import { useMemo } from 'react'
-import { MapContainer, TileLayer, GeoJSON } from 'react-leaflet'
+import { useEffect, useState } from 'react'
+import { MapContainer, GeoJSON } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 
-type FeatureCollection = {
-  type: 'FeatureCollection'
-  features: { type: string; properties: Record<string, string>; geometry: { type: string; coordinates: number[][][] } }[]
-}
-
-// Simplified province GeoJSON — 7 provinces, non-overlapping, roughly placed
-// Coordinates: [lng, lat]
-const NEPAL_PROVINCES: FeatureCollection = {
-  type: 'FeatureCollection',
-  features: [
-    {
-      type: 'Feature',
-      properties: { id: 'Sudurpashchim', label: 'Sudurpashchim' },
-      geometry: { type: 'Polygon', coordinates: [[[80.0, 28.8], [81.8, 28.8], [81.8, 30.5], [80.0, 30.5], [80.0, 28.8]]] },
-    },
-    {
-      type: 'Feature',
-      properties: { id: 'Karnali', label: 'Karnali' },
-      geometry: { type: 'Polygon', coordinates: [[[81.8, 28.5], [83.5, 28.5], [83.5, 30.2], [81.8, 30.2], [81.8, 28.5]]] },
-    },
-    {
-      type: 'Feature',
-      properties: { id: 'Gandaki', label: 'Gandaki' },
-      geometry: { type: 'Polygon', coordinates: [[[83.5, 28.2], [85.5, 28.2], [85.5, 29.2], [83.5, 29.2], [83.5, 28.2]]] },
-    },
-    {
-      type: 'Feature',
-      properties: { id: 'Lumbini', label: 'Lumbini' },
-      geometry: { type: 'Polygon', coordinates: [[[82.3, 27.0], [84.8, 27.0], [84.8, 28.0], [82.3, 28.0], [82.3, 27.0]]] },
-    },
-    {
-      type: 'Feature',
-      properties: { id: 'Bagmati', label: 'Bagmati' },
-      geometry: { type: 'Polygon', coordinates: [[[85.3, 27.8], [86.8, 27.8], [86.8, 28.8], [85.3, 28.8], [85.3, 27.8]]] },
-    },
-    {
-      type: 'Feature',
-      properties: { id: 'Koshi', label: 'Koshi' },
-      geometry: { type: 'Polygon', coordinates: [[[86.5, 27.0], [88.2, 27.0], [88.2, 28.5], [86.5, 28.5], [86.5, 27.0]]] },
-    },
-    {
-      type: 'Feature',
-      properties: { id: 'Madhesh', label: 'Madhesh' },
-      geometry: { type: 'Polygon', coordinates: [[[84.8, 26.4], [88.0, 26.4], [88.0, 27.0], [84.8, 27.0], [84.8, 26.4]]] },
-    },
-  ],
+const PROVINCE_MAP: Record<number, string> = {
+  1: 'Koshi',
+  2: 'Madhesh',
+  3: 'Bagmati',
+  4: 'Gandaki',
+  5: 'Lumbini',
+  6: 'Karnali',
+  7: 'Sudurpashchim',
 }
 
 export function NepalMapReal({
@@ -61,7 +23,29 @@ export function NepalMapReal({
   onSelect: (p: string) => void
   counts: Record<string, number>
 }) {
+  const [geoJson, setGeoJson] = useState<unknown>(null)
   const nationalCount = counts['National'] ?? 0
+
+  useEffect(() => {
+    fetch('/geo/nepal-provinces-simple.geojson')
+      .then(r => r.json())
+      .then((data: { features: { properties: { id: number; name: string } }[] }) => {
+        // remap id/name to our province ids
+        const mapped = {
+          ...data,
+          features: data.features.map(f => ({
+            ...f,
+            properties: {
+              ...f.properties,
+              id: PROVINCE_MAP[f.properties.id] ?? String(f.properties.id),
+              label: PROVINCE_MAP[f.properties.id] ?? f.properties.name,
+            },
+          })),
+        }
+        setGeoJson(mapped)
+      })
+      .catch(() => setGeoJson(null))
+  }, [])
 
   const geoJsonStyle = (feature: unknown) => {
     const id = (feature as { properties: { id: string } }).properties.id
@@ -95,25 +79,33 @@ export function NepalMapReal({
         </span>
       </div>
 
-      <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border-light)', height: 380 }}>
-        <MapContainer
-          center={[28.3, 84.5] as [number, number]}
-          zoom={7}
-          style={{ height: '100%', width: '100%' }}
-          scrollWheelZoom={false}
-          attributionControl={true}
-        >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          />
-          <GeoJSON
-            key={selected}
-            data={NEPAL_PROVINCES as unknown as never}
-            style={geoJsonStyle as never}
-            onEachFeature={onEachFeature as never}
-          />
-        </MapContainer>
+      <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border-light)', height: 380, background: 'var(--bg-sunken)' }}>
+        {geoJson ? (
+          <MapContainer
+            center={[28.4, 84.2] as [number, number]}
+            zoom={6.2}
+            zoomSnap={0.1}
+            minZoom={6}
+            maxZoom={8}
+            maxBounds={[[26.0, 79.5] as [number, number], [31.0, 89.0] as [number, number]]}
+            maxBoundsViscosity={0.9}
+            style={{ height: '100%', width: '100%', background: 'var(--bg-sunken)' }}
+            scrollWheelZoom={false}
+            attributionControl={false}
+            zoomControl={false}
+          >
+            <GeoJSON
+              key={selected}
+              data={geoJson as never}
+              style={geoJsonStyle as never}
+              onEachFeature={onEachFeature as never}
+            />
+          </MapContainer>
+        ) : (
+          <div style={{ height: '100%', display: 'grid', placeItems: 'center', background: 'var(--bg-sunken)', color: 'var(--text-tertiary)', fontSize: '.78rem' }}>
+            Loading province boundaries…
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.35rem', marginTop: '.75rem' }}>
@@ -147,7 +139,7 @@ export function NepalMapReal({
       </div>
 
       <p style={{ margin: '.6rem 0 0', fontSize: '.62rem', color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-        Real OpenStreetMap tiles + simplified province GeoJSON. National projects span multiple provinces and appear in every filter. Heritage & conservation sites cluster in Bagmati.
+        Pure vector — <code>public/geo/nepal-provinces-simple.geojson</code> (Acesmndr/nepal-geojson, WGS84). No tile layer, just the 7 province shapes. National projects span multiple provinces and appear in every filter.
       </p>
     </div>
   )

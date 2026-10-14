@@ -76,6 +76,13 @@ export const NEPAL_DATA_QUERIES = {
   PUBLIC_ENTERPRISE: 'public enterprise',
   COMPANY_REGISTRAR: 'company registrar',
   PROCUREMENT: 'procurement',
+
+  // Social & environment data
+  HEALTH: 'health',
+  EDUCATION: 'education',
+  AGRICULTURE: 'agriculture',
+  CLIMATE: 'climate',
+  WATER: 'water sanitation',
 }
 
 // Get relevant datasets for our dashboard
@@ -83,12 +90,14 @@ export async function getRelevantDatasets(): Promise<{
   companies: CkanDataset[]
   projects: CkanDataset[]
   economy: CkanDataset[]
+  social: CkanDataset[]
 }> {
-  const [companies, projects, economy] = await Promise.all([
+  const [companies, projects, economy, social] = await Promise.all([
     searchOrganization('department-of-industry', 20),
     searchOrganization('ministry-of-finance', 20),
     getTaggedDatasets('hydropower', 10),
+    searchDatasets('health education agriculture', 20),
   ])
 
-  return { companies, projects, economy }
+  return { companies, projects, economy, social }
 }

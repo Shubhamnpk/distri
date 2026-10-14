@@ -6,6 +6,10 @@ import { getRelevantDatasets } from './opendatanepal'
 export { fetchNepseData, fetchNepseStocks, fetchNepseMarketSummary } from './nepse'
 export { fetchProjectNepalDistricts, fetchProjectNepalProjects } from './project-nepal'
 export { getRelevantDatasets, searchDatasets } from './opendatanepal'
+export { getNrbUsdRate, fetchLatestForex, fetchUsdNprSeries } from './nrb'
+export type { NrbForexRate, NrbForexDay } from './nrb'
+export { fetchDataNepalIndicators, fetchDataNepalPlaces, fetchDataNepalProvinces, fetchDataNepalGeography, fetchDataNepalDatasets } from './datanepal'
+export type { DataNepalIndicator, DataNepalPlace } from './datanepal'
 
 // World Bank API
 const WB_BASE = 'https://api.worldbank.org/v2/country/NPL/indicator'
@@ -78,6 +82,14 @@ export type EconomyData = {
   imfInflation: WbDataPoint[]
   imfUnemployment: WbDataPoint[]
   imfCurrentAccount: WbDataPoint[]
+  imfGovtDebt: WbDataPoint[]
+  imfFiscalBalance: WbDataPoint[]
+  maternalMortality: WbDataPoint[]
+  primaryEnrollment: WbDataPoint[]
+  mobileSubs: WbDataPoint[]
+  forestArea: WbDataPoint[]
+  energyUse: WbDataPoint[]
+  fertility: WbDataPoint[]
 }
 
 export async function fetchEconomyData(): Promise<EconomyData> {
@@ -89,6 +101,8 @@ export async function fetchEconomyData(): Promise<EconomyData> {
     agriculture, industry, services, gini, poverty,
     urbanPopulation, internetUsers, exchangeRate, investment, govtRevenue, tradeOpenness,
     imfGdpGrowth, imfInflation, imfUnemployment, imfCurrentAccount,
+    imfGovtDebt, imfFiscalBalance,
+    maternalMortality, primaryEnrollment, mobileSubs, forestArea, energyUse, fertility,
   ] = await Promise.all([
     fetchWb('NY.GDP.MKTP.CD'),
     fetchWb('NY.GDP.MKTP.KD.ZG'),
@@ -124,6 +138,14 @@ export async function fetchEconomyData(): Promise<EconomyData> {
     fetchImf('PCPIPCH'),
     fetchImf('LUR'),
     fetchImf('BCA_NGDPD'),
+    fetchImf('GGXWDN_NGDP'),
+    fetchImf('GGXCNL_NGDP'),
+    fetchWb('SH.STA.MMRT', '2010:2025'),
+    fetchWb('SE.PRM.ENRR', '2015:2025'),
+    fetchWb('IT.CEL.SETS.P2', '2015:2025'),
+    fetchWb('AG.LND.FRST.ZS', '2015:2025'),
+    fetchWb('EG.USE.PCAP.KG.OE', '2010:2025'),
+    fetchWb('SP.DYN.TFRT.IN'),
   ])
   return {
     gdp, gdpGrowth, gdpPerCapita, gdpPpp, inflation,
@@ -133,6 +155,8 @@ export async function fetchEconomyData(): Promise<EconomyData> {
     agriculture, industry, services, gini, poverty,
     urbanPopulation, internetUsers, exchangeRate, investment, govtRevenue, tradeOpenness,
     imfGdpGrowth, imfInflation, imfUnemployment, imfCurrentAccount,
+    imfGovtDebt, imfFiscalBalance,
+    maternalMortality, primaryEnrollment, mobileSubs, forestArea, energyUse, fertility,
   }
 }
 
@@ -147,6 +171,15 @@ let cachedNprRate: number | null = null
  *  No key, CDN-cached. Uses INR*1.6 peg if NPR not present (peg holds: 95.27*1.6≈152.44 vs direct 152.51). */
 export async function getLiveNprRate(): Promise<number> {
   if (cachedNprRate) return cachedNprRate
+  // 1) authoritative: Nepal Rastra Bank official FOREX API
+  try {
+    const { getNrbUsdRate } = await import('./nrb')
+    const nrb = await getNrbUsdRate()
+    if (typeof nrb === 'number' && nrb > 0) {
+      cachedNprRate = nrb
+      return nrb
+    }
+  } catch {}
   try {
     const res = await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json', {
       next: { revalidate: 86400 },
