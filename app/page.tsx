@@ -7,6 +7,9 @@ import { StatusBadge } from '@/components/shared'
 import { companies, projects, parseBudgetCr, sources } from '@/lib/data'
 import { getNrbUsdRate } from '@/lib/nrb'
 import { fetchNepseIndex, fetchNepseStocks } from '@/lib/nepse'
+import { nptTime12 } from '@/lib/calendar'
+import { isNptDay } from '@/lib/time'
+import { formatNpr, formatNprText } from '@/lib/currency'
 import { fetchWbProjectCount } from '@/lib/api'
 import { fetchCurrentWeather, fetchCurrentPm25, type CurrentWeather } from '@/lib/meteo'
 
@@ -16,9 +19,7 @@ const trackedTotal = companies.length + projects.length
 const totalBudgetCr = projects.reduce((s, p) => s + (parseBudgetCr(p.budget) ?? 0), 0)
 
 function fmtBudgetCr(cr: number): string {
-  if (cr >= 100000) return `NPR ${(cr / 100000).toFixed(2)}T`
-  if (cr >= 100) return `NPR ${(cr / 100).toFixed(1)}B`
-  return `NPR ${Math.round(cr).toLocaleString()} Cr`
+  return formatNpr(cr * 1e7)
 }
 
 const statusCount = (s: string) => projects.filter(p => p.status === s).length
@@ -48,8 +49,28 @@ type Live = {
   pm25: number | null
 }
 
+const STARS = [
+  { l: '6%', t: '12%', s: 2, d: '0s' }, { l: '16%', t: '30%', s: 1.5, d: '-.8s' },
+  { l: '28%', t: '10%', s: 2.5, d: '-1.6s' }, { l: '40%', t: '24%', s: 1.5, d: '-.4s' },
+  { l: '52%', t: '8%', s: 2, d: '-2.1s' }, { l: '64%', t: '28%', s: 1.5, d: '-1.2s' },
+  { l: '76%', t: '12%', s: 2, d: '-.6s' }, { l: '86%', t: '34%', s: 1.5, d: '-1.9s' },
+  { l: '12%', t: '52%', s: 1.5, d: '-1s' }, { l: '34%', t: '44%', s: 2, d: '-2.4s' },
+  { l: '58%', t: '52%', s: 1.5, d: '-.2s' }, { l: '80%', t: '58%', s: 2, d: '-1.5s' },
+]
+
 export default function HomePage() {
   const [live, setLive] = useState<Live>({ rate: null, nepse: null, breadth: null, wbCount: null, temp: null, pm25: null })
+  const [isDay, setIsDay] = useState(true)
+  const [now, setNow] = useState(() => new Date())
+
+  useEffect(() => {
+    setIsDay(isNptDay())
+    const t = setInterval(() => {
+      setIsDay(isNptDay())
+      setNow(new Date())
+    }, 30000)
+    return () => clearInterval(t)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -82,7 +103,7 @@ export default function HomePage() {
 
   const tape: { label: string; value: string; up?: boolean }[] = []
   if (live.nepse) tape.push({ label: 'NEPSE', value: `${live.nepse.v.toFixed(2)} (${live.nepse.chg >= 0 ? '+' : ''}${live.nepse.chg.toFixed(2)})`, up: live.nepse.chg >= 0 })
-  if (live.rate) tape.push({ label: 'USD/NPR', value: `रू${live.rate.toFixed(2)}` })
+  if (live.rate) tape.push({ label: 'USD/NPR', value: `रु ${live.rate.toFixed(2)}` })
   if (live.breadth) {
     tape.push({ label: 'Advances', value: String(live.breadth.adv), up: true })
     tape.push({ label: 'Declines', value: String(live.breadth.dec), up: false })
@@ -125,13 +146,24 @@ export default function HomePage() {
           </div>
           <div className="hero-meta">
             <span className="live-dot" />
-            <strong>{trackedTotal} entities tracked from published records</strong>
+            <strong>{nptTime12(now)} NPT</strong>
+            <span>·</span>
+            <span>Last indexed 26 Aug 2026</span>
             <span>·</span>
             <span>Official sources indexed · tape figures are live where marked</span>
           </div>
         </div>
-        <aside className="hero-visual" aria-label="Live Nepal snapshot">
-          <div className="sun" />
+        <aside className={`hero-visual${isDay ? '' : ' night'}`} aria-label="Live Nepal snapshot">
+          {isDay ? (
+            <div className="sun" />
+          ) : (
+            <>
+              <div className="moon" />
+              {STARS.map((s, i) => (
+                <span key={i} className="star" style={{ left: s.l, top: s.t, width: s.s, height: s.s, animationDelay: s.d }} />
+              ))}
+            </>
+          )}
           <svg className="ridge" viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden="true">
             <path d="M0,90 L50,55 L95,78 L150,35 L210,70 L265,30 L320,66 L370,45 L400,60 L400,120 L0,120 Z" fill="rgba(6,40,32,.55)" />
             <path d="M0,100 L70,72 L140,92 L220,60 L300,88 L400,74 L400,120 L0,120 Z" fill="rgba(4,26,21,.7)" />
@@ -142,7 +174,7 @@ export default function HomePage() {
           </div>
           <div className="chip chip-2">
             <Globe2 size={16} style={{ color: 'var(--accent)' }} />
-            <div><small>USD / NPR · NRB</small><strong>{live.rate ? `रू${live.rate.toFixed(2)}` : '-'}</strong></div>
+            <div><small>USD / NPR · NRB</small><strong>{live.rate ? `रु ${live.rate.toFixed(2)}` : '-'}</strong></div>
           </div>
           <div className="chip chip-3">
             <CloudSun size={16} style={{ color: 'var(--accent)' }} />
@@ -167,7 +199,7 @@ export default function HomePage() {
             : <span>Live when market feeds answer</span>}
         </article>
         <article className="metric-card">
-          <Globe2 size={18} /><p>Dollar rate today</p><strong>{live.rate ? `रू${live.rate.toFixed(2)}` : '-'}</strong>
+          <Globe2 size={18} /><p>Dollar rate today</p><strong>{live.rate ? `रु ${live.rate.toFixed(2)}` : '-'}</strong>
           <span>{live.rate ? 'NRB official fixing' : 'Fetching NRB feed…'}</span>
         </article>
       </section>
@@ -212,7 +244,7 @@ export default function HomePage() {
             <div className="signal"><div className="signal-number">01</div><div><strong>{signalProject.name}</strong><p>Physical progress {signalProject.progress}% · target {signalProject.target}.</p><StatusBadge status={signalProject.status} /></div></div>
           )}
           {signalCompany && (
-            <div className="signal"><div className="signal-number">02</div><div><strong>{signalCompany.name}</strong><p>{signalCompany.result} · {signalCompany.year}.</p><StatusBadge status={signalCompany.coverage} /></div></div>
+            <div className="signal"><div className="signal-number">02</div><div><strong>{signalCompany.name}</strong><p>{formatNprText(signalCompany.result)} · {signalCompany.year}.</p><StatusBadge status={signalCompany.operatingStatus} /></div></div>
           )}
           <Link href="/projects" className="panel-link">See all signals <ArrowUpRight size={14} /></Link>
         </article>

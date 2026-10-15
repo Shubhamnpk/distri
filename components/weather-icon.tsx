@@ -1,10 +1,22 @@
 'use client'
 
-import { Cloud, CloudSun, CloudRain, CloudLightning, CloudFog, Sun, Snowflake, Wind } from 'lucide-react'
+import { Cloud, CloudSun, CloudMoon, CloudRain, CloudLightning, CloudFog, Sun, Moon, Snowflake, Wind } from 'lucide-react'
 import type { SkyKind } from '@/lib/condition'
 
-/** Lucide counterpart of a sky kind - for compact cards and badges. */
-export function skyLucide(kind: SkyKind) {
+/** Lucide counterpart of a sky kind — for compact cards and badges. */
+export function skyLucide(kind: SkyKind, night = false) {
+  if (night) {
+    switch (kind) {
+      case 'clear': return Moon
+      case 'partly': return CloudMoon
+      case 'cloudy': return Cloud
+      case 'rain': return CloudRain
+      case 'storm': return CloudLightning
+      case 'fog': return CloudFog
+      case 'snow': return Snowflake
+      case 'wind': return Wind
+    }
+  }
   switch (kind) {
     case 'clear': return Sun
     case 'partly': return CloudSun
@@ -18,12 +30,28 @@ export function skyLucide(kind: SkyKind) {
 }
 
 /** Animated SVG sky icon - motion mirrors the actual condition. Pure CSS, no assets. */
-export function WeatherIcon({ kind, size = 96 }: { kind: SkyKind; size?: number }) {
+export function WeatherIcon({ kind, size = 96, night = false }: { kind: SkyKind; size?: number; night?: boolean }) {
   const cloud = '#e8eef4'
   const dark = '#c3d2de'
+  const moonlit = night && (kind === 'clear' || kind === 'partly')
+  const orbX = kind === 'clear' ? 32 : 22
+  const orbY = kind === 'clear' ? 32 : 22
   return (
     <svg className="wx" width={size} height={size} viewBox="0 0 64 64" role="img" aria-label={kind}>
-      {(kind === 'clear' || kind === 'partly') && (
+      {moonlit && (
+        <>
+          <circle cx={orbX} cy={orbY} r="15" fill="#1e2647" />
+          <circle cx={orbX - 2} cy={orbY - 2} r="8" fill="#fdfbf0" style={{ filter: 'drop-shadow(0 0 8px rgba(240,235,200,.65))' }} />
+          <circle cx={orbX - 5} cy={orbY - 5} r="1.8" fill="#d8d2b8" />
+          <circle cx={orbX + 1} cy={orbY} r="1.3" fill="#d8d2b8" />
+          <circle cx={orbX - 3} cy={orbY + 3} r="1" fill="#d8d2b8" />
+          <circle className="wx-star" cx={orbX + 10} cy={orbY - 10} r="1.2" fill="#fff" />
+          <circle className="wx-star" style={{ animationDelay: '-1s' }} cx={orbX - 11} cy={orbY - 8} r="1" fill="#fff" />
+          <circle className="wx-star" style={{ animationDelay: '-2s' }} cx={orbX + 8} cy={orbY + 11} r="1" fill="#fff" />
+          <circle className="wx-star" style={{ animationDelay: '-1.5s' }} cx={orbX - 12} cy={orbY + 6} r="0.9" fill="#fff" />
+        </>
+      )}
+      {!moonlit && (kind === 'clear' || kind === 'partly') && (
         <g className="wx-rays" stroke="#ffcf5c" strokeWidth="3" strokeLinecap="round">
           <circle cx={kind === 'clear' ? 32 : 22} cy={kind === 'clear' ? 32 : 22} r="10" fill="#ffd66b" stroke="none" />
           {[0, 45, 90, 135, 180, 225, 270, 315].map(a => {

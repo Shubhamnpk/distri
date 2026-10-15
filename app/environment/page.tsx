@@ -1,14 +1,16 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowUpRight, Droplets, Flame, TriangleAlert, Activity, MapPin, Wind } from 'lucide-react'
 import { fetchDhmForecast, fetchDhmObservations, type DhmWeather, type DhmObservations, type DhmStationForecast } from '@/lib/dhm'
 import { fetchBipadIncidents, fetchBipadAlerts, type BipadIncident, type BipadAlert } from '@/lib/bipad'
-import { fetchCurrentWeather, fetchCurrentPm25, fetchNepalQuakes, fetchCurrentTemps, type CurrentWeather, type NepalQuake } from '@/lib/meteo'
+import { fetchCurrentWeather, fetchCurrentPm25, fetchNepalQuakes, fetchCurrentTemps, fetchHourlyTemps, type CurrentWeather, type NepalQuake } from '@/lib/meteo'
+import { LineChart } from '@/components/charts'
 import { slugify } from '@/lib/data'
 import { skyKind, SKY_META } from '@/lib/condition'
 import { WeatherIcon, skyLucide } from '@/components/weather-icon'
+import { isDayBySun, shortClock } from '@/lib/time'
 import { HazardFeed } from '@/components/hazard-feed'
 import { timeAgo } from '@/lib/time'
 
@@ -28,6 +30,7 @@ export default function EnvironmentPage() {
   const [quakes, setQuakes] = useState<NepalQuake[]>([])
   const [wx, setWx] = useState<CurrentWeather | null>(null)
   const [pm25, setPm25] = useState<number | null>(null)
+  const [ktmHourly, setKtmHourly] = useState<{ time: string; value: number }[]>([])
   const [liveTemps, setLiveTemps] = useState<Record<number, number>>({})
   const tempsFor = useRef<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -36,7 +39,7 @@ export default function EnvironmentPage() {
     let cancelled = false
     async function load() {
       try {
-        const [f, o, inc, al, q, w, pm] = await Promise.all([
+        const [f, o, inc, al, q, w, pm, hh] = await Promise.all([
           fetchDhmForecast(),
           fetchDhmObservations(),
           fetchBipadIncidents(30),
@@ -44,6 +47,7 @@ export default function EnvironmentPage() {
           fetchNepalQuakes(6),
           fetchCurrentWeather(KTM),
           fetchCurrentPm25(KTM),
+          fetchHourlyTemps(KTM),
         ])
         if (cancelled) return
         setForecast(f)
@@ -53,6 +57,7 @@ export default function EnvironmentPage() {
         setQuakes(q)
         setWx(w)
         setPm25(pm)
+        setKtmHourly(hh)
       } catch {
         // sections fail soft independently
       } finally {
@@ -83,11 +88,12 @@ export default function EnvironmentPage() {
   const ktmStation = stations.find(s => s.name.toLowerCase().includes('kathmandu')) ?? null
   const ktmObs = obs?.stations?.find(s => s.id === ktmStation?.id) ?? obs?.stations?.find(s => s.name.toLowerCase().includes('kathmandu')) ?? null
   const ktmDay = ktmStation?.manual_forecast?.find(d => d.day === 1) ?? ktmStation?.manual_forecast?.[0]
+  const night = useMemo(() => !isDayBySun(ktmStation?.sunrise, ktmStation?.sunset), [ktmStation?.sunrise, ktmStation?.sunset])
 
   return (
     <div className="content-wrap">
       {/* ── Kathmandu hero - the sky right now ── */}
-      <div className="env-hero">
+      <div className={`env-hero${night ? ' night' : ''}`}>
         <div className="env-hero-grid">
           <div className="env-hero-body" style={{ padding: 0 }}>
             <p className="eyebrow" style={{ color: '#9adbc4' }}>LIVE ENVIRONMENT · KATHMANDU VALLEY</p>
@@ -102,6 +108,9 @@ export default function EnvironmentPage() {
                 { label: 'Rainfall today', val: ktmObs?.rainfall != null ? `${ktmObs.rainfall} mm` : '-' },
                 { label: 'Rain likely', val: ktmDay ? `${ktmDay.rain_probability}%` : '-' },
                 { label: 'PM2.5', val: pm25 != null ? `${pm25.toFixed(1)} µg/m³` : '-' },
+                ...(ktmStation?.sunrise && ktmStation?.sunset
+                  ? [{ label: 'Sunrise / sunset', val: `${shortClock(ktmStation.sunrise)} · ${shortClock(ktmStation.sunset)}` }]
+                  : []),
               ].map(item => (
                 <div key={item.label}>
                   <span>{item.label}</span>
@@ -114,12 +123,42 @@ export default function EnvironmentPage() {
                 Open Kathmandu details <ArrowUpRight size={14} />
               </Link>
             )}
+            {ktmObs?.min_temperature != null && ktmObs?.max_temperature != null && ktmObs.max_temperature > ktmObs.min_temperature && (
+              <div style={{ marginTop: '1rem', maxWidth: 420 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.6rem', fontWeight: 700, marginBottom: '.3rem', opacity: .75 }}>
+                  <span>Low {ktmObs.min_temperature.toFixed(0)}°</span>
+                  <span>Now {wx?.temperature_2m != null ? `${wx.temperature_2m.toFixed(1)}°` : ''}</span>
+                  <span>High {ktmObs.max_temperature.toFixed(0)}°</span>
+                </div>
+                <div style={{ height: 8, borderRadius: 99, background: 'rgba(255,255,255,.2)', position: 'relative' }}>
+                  <span style={{
+                    position: 'absolute',
+                    left: wx?.temperature_2m != null
+                      ? `calc(${Math.min(100, Math.max(0, ((wx.temperature_2m - ktmObs.min_temperature) / (ktmObs.max_temperature - ktmObs.min_temperature)) * 100))}% - 7px)`
+                      : '50%',
+                    top: -3, width: 14, height: 14, borderRadius: '50%', background: '#fff',
+                    boxShadow: '0 2px 8px rgba(0,0,0,.3)',
+                  }} />
+                </div>
+              </div>
+            )}
           </div>
           <div className="wx-stage" title={ktmDay?.weather?.name ?? 'Current sky'}>
-            <span className="wx-halo"><WeatherIcon kind={skyKind(ktmDay?.weather?.name)} size={120} /></span>
-            <span className="wx-caption">{ktmDay?.weather?.name ?? SKY_META.partly.label}</span>
+            <span className="wx-halo"><WeatherIcon kind={skyKind(ktmDay?.weather?.name)} size={120} night={night} /></span>
+            <span className="wx-caption">{ktmDay?.weather?.name ?? SKY_META.partly.label}{night ? ' · night' : ''}</span>
           </div>
         </div>
+        {ktmHourly.length > 1 && (
+          <div style={{ padding: '0 clamp(1.5rem, 3vw, 2.5rem) clamp(1.25rem, 2vw, 1.75rem)' }}>
+            <LineChart
+              data={ktmHourly.filter((_, i) => i % 2 === 0).map(h => ({ year: h.time, value: h.value }))}
+              color="#ffffff"
+              height={80}
+              formatValue={v => `${v.toFixed(1)}°C`}
+              title="Kathmandu · across today"
+            />
+          </div>
+        )}
       </div>
 
       {/* ── Other places: pocket condition cards ── */}
@@ -138,7 +177,7 @@ export default function EnvironmentPage() {
               const ob = obs?.stations?.find(o => o.id === s.id)
               const kind = skyKind(d1?.weather?.name)
               const meta = SKY_META[kind]
-              const Icon = skyLucide(kind)
+              const Icon = skyLucide(kind, night)
               return (
                 <Link key={s.id} href={`/environment/${slugify(s.name)}`} className="city-card">
                   <span className="city-icon" style={{ background: meta.bg, color: meta.tint }}>

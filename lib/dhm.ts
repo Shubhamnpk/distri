@@ -29,6 +29,12 @@ export type DhmStationForecast = {
   nepali_name?: string
   latitude: number
   longitude: number
+  /** "5:58:16 AM" NPT — precise day/night boundary for this station. */
+  sunrise?: string
+  /** "5:39:37 PM" NPT. */
+  sunset?: string
+  /** Station-local date, e.g. "2026-10-16". */
+  datetime?: string
   manual_forecast?: {
     rain_probability: number
     from_temperature: number

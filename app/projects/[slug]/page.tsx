@@ -1,11 +1,11 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, ArrowRight, ExternalLink, FileText, Check, Clock, AlertTriangle, HelpCircle, MapPin, Megaphone, Bell } from 'lucide-react'
-import { projects, slugify, findProjectBySlug, parseBudgetCr, utilizationPct } from '@/lib/data'
+import { projects, slugify, findProjectBySlug, parseBudgetCr, utilizationPct, PROJECT_FX_NOTE, PROJECT_FX_SOURCE } from '@/lib/data'
 import { StatusBadge } from '@/components/shared'
-import { ProjectCommunityContext } from '@/components/community-panel'
 import { RelatedDatasets } from '@/components/related-datasets'
 import type { ProjectUpdate } from '@/lib/types'
+import { formatNprText } from '@/lib/currency'
 
 export function generateStaticParams() {
   return projects.map(p => ({ slug: slugify(p.name) }))
@@ -68,7 +68,7 @@ function getTimeline(project: import('@/lib/types').Project): ProjectUpdate[] {
     {
       date: project.updated,
       title: `${project.progress}% - ${project.status}`,
-      text: `${project.category} · ${project.ministry}. Budget ${project.budget}, spent ${project.spent}. Target ${project.target}. Source: ${project.source}.`,
+      text: `${project.category} · ${project.ministry}. Budget ${formatNprText(project.budget)}, spent ${formatNprText(project.spent)}. Target ${formatNprText(project.target)}. Source: ${project.source}.`,
       type: type as ProjectUpdate['type'],
     },
   ]
@@ -78,6 +78,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const { slug } = await params
   const project = findProjectBySlug(slug)
   if (!project) notFound()
+  const projectImages = Array.from(new Set([project.image, ...(project.gallery ?? [])]))
 
   const idx = projects.findIndex(p => slugify(p.name) === slug)
   const prev = idx > 0 ? projects[idx - 1] : null
@@ -215,9 +216,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         <div style={{ padding: '1.1rem clamp(1rem, 3vw, 1.5rem)', display: 'grid', gap: '.85rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '.6rem' }}>
             {[
-              { label: 'Budget', value: project.budget, extra: parseBudgetCr(project.budget) != null ? `${parseBudgetCr(project.budget)!.toLocaleString()} Cr` : null },
-              { label: 'Spent', value: project.spent, extra: utilizationPct(project.spent, project.budget) != null ? `${utilizationPct(project.spent, project.budget)}% utilized` : parseBudgetCr(project.spent) != null ? `${parseBudgetCr(project.spent)!.toLocaleString()} Cr` : null },
-              { label: 'Target', value: project.target, extra: null },
+              { label: 'Budget', value: formatNprText(project.budget), extra: project.budgetNote ? null : parseBudgetCr(project.budget) != null ? `${parseBudgetCr(project.budget)!.toLocaleString()} Cr` : null, note: project.budgetNote },
+              { label: 'Spent', value: formatNprText(project.spent), extra: utilizationPct(project.spent, project.budget) != null ? `${utilizationPct(project.spent, project.budget)}% utilized` : parseBudgetCr(project.spent) != null ? `${parseBudgetCr(project.spent)!.toLocaleString()} Cr` : null, note: project.spentNote },
+              { label: 'Target', value: formatNprText(project.target), extra: null },
               { label: 'Updated', value: project.updated, extra: null },
               { label: 'Progress', value: `${project.progress}%`, extra: null },
             ].map(s => (
@@ -225,6 +226,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 <span className="text-tertiary" style={{ fontSize: '.6rem', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }}>{s.label}</span>
                 <strong style={{ display: 'block', fontSize: '.92rem', marginTop: '.15rem', letterSpacing: '-.01em' }}>{s.value}</strong>
                 {s.extra && <span className="text-tertiary bg-card border border-line-light rounded-[20px]" style={{ fontSize: '.64rem', padding: '.1rem .35rem', display: 'inline-block', marginTop: '.25rem' }}>{s.extra}</span>}
+                {s.note && <span className="text-tertiary" style={{ display: 'block', fontSize: '.64rem', lineHeight: 1.4, marginTop: '.25rem' }}>{s.note}</span>}
               </div>
             ))}
           </div>
@@ -232,9 +234,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             <div className="text-tertiary" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '.66rem', marginBottom: '.3rem' }}>
               <span>Physical progress</span>
               <strong className="text-ink" style={{ fontSize: '.78rem' }}>{project.progress}%</strong>
-            </div>
-            <div className="progress-track rounded-[20px]" style={{ height: 8 }}>
-              <span className="rounded-[20px]" style={{ width: `${project.progress}%`, background: statusColor(project.status) }} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '.45rem' }}>
               <StatusBadge status={project.status} />
@@ -257,15 +256,15 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             </p>
           </section>
 
-          {project.gallery && project.gallery.length > 0 && (
+          {projectImages.length > 0 && (
             <section className="panel">
               <p className="eyebrow" style={{ margin: 0 }}>GALLERY</p>
               <h2 className="font-serif" style={{ fontWeight: 500, fontSize: '1.1rem', margin: '.2rem 0 0' }}>Project gallery</h2>
-              <p className="muted" style={{ marginTop: '.25rem' }}>Photos from Wikimedia / official sources · click to open</p>
+              <p className="muted" style={{ marginTop: '.25rem' }}>Public project images · click to open</p>
               <div style={{ display: 'flex', gap: '.5rem', marginTop: '.75rem', overflowX: 'auto', paddingBottom: 4 }}>
-                {project.gallery.map(src => (
+                {projectImages.map(src => (
                   <a key={src} href={src} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>
-                    <img src={src} alt="" className="rounded-[8px] border border-line-light" style={{ width: 160, height: 110, objectFit: 'cover', display: 'block' }} loading="lazy" />
+                    <img src={src} alt={project.name} className="rounded-[8px] border border-line-light" style={{ width: 160, height: 110, objectFit: 'cover', display: 'block' }} loading="lazy" />
                   </a>
                 ))}
               </div>
@@ -326,6 +325,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             </div>
           </section>
 
+
           {/* Completion note if present */}
           {project.completionNote && (
             <section
@@ -368,6 +368,29 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               ))}
             </div>
           </section>
+          <section className="panel">
+            <p className="eyebrow" style={{ margin: 0 }}>RECORD HISTORY</p>
+            <h2 className="font-serif" style={{ fontWeight: 500, fontSize: '1.1rem', margin: '.2rem 0 0' }}>Project change log</h2>
+            <p className="muted" style={{ marginTop: '.25rem' }}>Recorded changes to published project data, with the previous and updated values.</p>
+            {project.changeLog?.length ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '.6rem', marginTop: '.75rem' }}>
+                {project.changeLog.map((change, i) => (
+                  <div key={`${change.date}-${change.field}-${i}`} className="bg-sunken border border-line-light rounded-[10px]" style={{ padding: '.7rem .8rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '.5rem', flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: '.78rem' }}>{change.field}</strong>
+                      <span className="text-tertiary" style={{ fontSize: '.66rem' }}>{change.date}</span>
+                    </div>
+                    <p className="text-secondary" style={{ margin: '.4rem 0', fontSize: '.75rem', lineHeight: 1.5 }}>
+                      <span className="text-tertiary">{change.from}</span> <ArrowRight size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> <strong className="text-ink">{change.to}</strong>
+                    </p>
+                    <span className="text-tertiary" style={{ fontSize: '.66rem' }}>{change.source}</span>
+                    <a href={change.sourceUrl} target="_blank" rel="noreferrer" className="text-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '.25rem', fontSize: '.68rem', marginLeft: '.5rem' }}>Source <ExternalLink size={11} /></a>
+                    {change.note && <p className="muted" style={{ margin: '.35rem 0 0', fontSize: '.67rem' }}>{change.note}</p>}
+                  </div>
+                ))}
+              </div>
+            ) : <p className="text-tertiary" style={{ margin: '.65rem 0 0', fontSize: '.74rem' }}>No value changes have been recorded for this project yet.</p>}
+          </section>
         </div>
 
         {/* Sticky source card */}
@@ -380,7 +403,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <div>
                 <strong style={{ display: 'block', fontSize: '.82rem' }}>Source evidence</strong>
                 <p className="text-secondary" style={{ margin: '.25rem 0 0', fontSize: '.72rem', lineHeight: 1.55 }}>
-                  Progress reported by {project.source}. Spending and budget figures are shown only where the published record provides a usable figure.
+                  Progress reported by {project.source}. Spending and budget figures are shown only where the published record provides a usable figure. {PROJECT_FX_NOTE} <a href={PROJECT_FX_SOURCE} target="_blank" rel="noreferrer" className="text-primary">NRB rate source</a>
                 </p>
                 <p style={{ margin: '.6rem 0 0', fontSize: '.7rem' }}>
                   <span className="text-tertiary">Source:</span> <strong className="text-ink">{project.source}</strong>
@@ -405,11 +428,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 <div style={{ marginTop: '.75rem', display: 'flex', flexDirection: 'column', gap: '.4rem', fontSize: '.72rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span className="text-tertiary">Budget</span>
-                    <strong>{project.budget}</strong>
+                    <strong>{formatNprText(project.budget)}</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span className="text-tertiary">Spent</span>
-                    <strong>{project.spent}</strong>
+                    <strong>{formatNprText(project.spent)}</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span className="text-tertiary">Status</span>
@@ -426,7 +449,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               Physical progress is based on the latest published progress report ({project.updated}). Dates in the checklist reflect the most recent indexed update; earlier milestones should be verified against primary documents.
             </p>
           </div>
-          <ProjectCommunityContext location={project.location} />
           <RelatedDatasets query={project.category} title={`Open data: ${project.category}`} />
         </aside>
       </div>

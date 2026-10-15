@@ -1,6 +1,7 @@
 'use client'
 
 import { Building2 } from 'lucide-react'
+import { useState } from 'react'
 
 export function CompanyLogo({
   src,
@@ -15,7 +16,8 @@ export function CompanyLogo({
   isProfit?: boolean
   rounded?: number
 }) {
-  if (!src) {
+  const [failed, setFailed] = useState(false)
+  if (!src || failed) {
     return (
       <span
         style={{
@@ -49,18 +51,6 @@ export function CompanyLogo({
         padding: 4,
       }}
     >
-      <span
-        style={{
-          position: 'absolute',
-          inset: 0,
-          display: 'grid',
-          placeItems: 'center',
-          background: isProfit === undefined ? 'var(--bg-sunken)' : isProfit ? 'var(--primary-50)' : 'var(--danger-light)',
-          color: isProfit === undefined ? 'var(--text-tertiary)' : isProfit ? 'var(--primary)' : 'var(--danger)',
-        }}
-      >
-        <Building2 size={size * 0.45} />
-      </span>
       <img
         src={src}
         alt={alt}
@@ -68,9 +58,7 @@ export function CompanyLogo({
         decoding="async"
         referrerPolicy="no-referrer"
         style={{ position: 'relative', width: '100%', height: '100%', objectFit: 'contain' }}
-        onError={e => {
-          ;(e.currentTarget as HTMLImageElement).style.display = 'none'
-        }}
+        onError={() => setFailed(true)}
       />
     </span>
   )

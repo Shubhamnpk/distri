@@ -3,15 +3,16 @@
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Droplets, MapPin, Thermometer, Activity, Wind, Flame, TriangleAlert } from 'lucide-react'
-import { fetchDhmForecast, fetchDhmObservations, type DhmStationForecast, type DhmObservations } from '@/lib/dhm'
+import { ArrowLeft, Droplets, MapPin, Activity, Wind, Flame, TriangleAlert } from 'lucide-react'
+import { fetchDhmForecast, fetchDhmObservations, type DhmStationForecast, type DhmObservations, type DhmWeather } from '@/lib/dhm'
 import { fetchBipadIncidents, fetchBipadAlerts, type BipadIncident, type BipadAlert } from '@/lib/bipad'
-import { fetchCurrentWeather, fetchCurrentPm25, fetchNepalQuakes, fetchDailyHighLow, type CurrentWeather, type NepalQuake } from '@/lib/meteo'
+import { fetchCurrentWeather, fetchCurrentPm25, fetchNepalQuakes, fetchDailyHighLow, fetchHourlyTemps, type CurrentWeather, type NepalQuake } from '@/lib/meteo'
 import { slugify } from '@/lib/data'
 import { skyKind, SKY_META } from '@/lib/condition'
 import { WeatherIcon, skyLucide } from '@/components/weather-icon'
+import { LineChart } from '@/components/charts'
 import { HazardFeed } from '@/components/hazard-feed'
-import { timeAgo } from '@/lib/time'
+import { timeAgo, forecastDayLabel, isNptDay, isDayBySun, shortClock } from '@/lib/time'
 
 function quakeColor(mag: number): string {
   if (mag >= 5) return 'var(--danger)'
@@ -37,15 +38,49 @@ function Val({ v, model = false }: { v: number | null | undefined; model?: boole
   )
 }
 
+/** Bottom-of-panel toggle revealing the full 24-hour breakdown. */
+function HourlyDetails({ hourly }: { hourly: { time: string; value: number }[] }) {
+  const [open, setOpen] = useState(false)
+  const rows = hourly.filter((_, i) => i % 2 === 0)
+  const peak = hourly.reduce((a, b) => (b.value > a.value ? b : a), hourly[0])
+  return (
+    <div style={{ marginTop: '.6rem' }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '.35rem',
+          padding: '.5rem', borderRadius: 8, fontSize: '.7rem', fontWeight: 700, cursor: 'pointer',
+          background: open ? 'var(--primary)' : 'var(--bg-sunken)', color: open ? '#fff' : 'var(--primary)',
+        }}
+        aria-expanded={open}
+      >
+        {open ? 'Hide details' : 'Show details'}
+      </button>
+      {open && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(88px, 1fr))', gap: '.35rem', marginTop: '.5rem' }}>
+          {rows.map(r => (
+            <div key={r.time} style={{ padding: '.4rem', textAlign: 'center', borderStyle: r.time === peak.time ? 'solid' : undefined, borderWidth: r.time === peak.time ? 1 : undefined }} className={r.time === peak.time ? 'bg-primary-50 border border-primary rounded-[8px]' : 'bg-sunken rounded-[8px]'}>
+              <span style={{ fontSize: '.58rem', display: 'block' }} className="text-tertiary">{r.time}</span>
+              <strong style={{ fontSize: '.78rem' }}>{r.value.toFixed(1)}°</strong>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function CityDetailPage() {
   const params = useParams<{ slug: string }>()
   const [stations, setStations] = useState<DhmStationForecast[]>([])
+  const [forecastAt, setForecastAt] = useState<string | undefined>(undefined)
   const [obs, setObs] = useState<DhmObservations | null>(null)
   const [quakes, setQuakes] = useState<NepalQuake[]>([])
   const [incidents, setIncidents] = useState<BipadIncident[]>([])
   const [alerts, setAlerts] = useState<BipadAlert[]>([])
   const [wx, setWx] = useState<CurrentWeather | null>(null)
   const [pm25, setPm25] = useState<number | null>(null)
+  const [hourly, setHourly] = useState<{ time: string; value: number }[]>([])
   const [daily, setDaily] = useState<{ date: string; max: number | null; min: number | null }[]>([])
   const [missing, setMissing] = useState(false)
 
@@ -59,6 +94,7 @@ export default function CityDetailPage() {
         if (cancelled) return
         const list = (f?.stations ?? []).filter(s => (s.manual_forecast ?? []).length > 0)
         setStations(list)
+        setForecastAt(f?.datetime)
         setObs(o)
         setQuakes(q)
         setIncidents(inc.results)
@@ -76,12 +112,14 @@ export default function CityDetailPage() {
       fetchCurrentWeather({ lat: city.latitude, lon: city.longitude }),
       fetchCurrentPm25({ lat: city.latitude, lon: city.longitude }),
       fetchDailyHighLow({ lat: city.latitude, lon: city.longitude }),
+      fetchHourlyTemps({ lat: city.latitude, lon: city.longitude }),
     ])
-      .then(([w, pm, dy]) => {
+      .then(([w, pm, dy, hh]) => {
         if (cancelled) return
         setWx(w)
         setPm25(pm)
         setDaily(dy)
+        setHourly(hh)
       })
       .catch(() => {})
     return () => { cancelled = true }
@@ -111,20 +149,36 @@ export default function CityDetailPage() {
   const day1 = city?.manual_forecast?.find(d => d.day === 1) ?? city?.manual_forecast?.[0]
   const day2 = city?.manual_forecast?.find(d => d.day === 2) ?? city?.manual_forecast?.[1]
   const kind = skyKind(day1?.weather?.name)
+  const night = useMemo(() => isDayBySun(city?.sunrise, city?.sunset), [city?.sunrise, city?.sunset])
 
   // DHM gaps filled transparently: observed ← model today, forecast max ← model day.
   const dMin0 = daily[0]?.min ?? null
   const dMax0 = daily[0]?.max ?? null
   const dMax1 = daily[1]?.max ?? null
-  const dMin1 = daily[1]?.min ?? null
   const obsMin = observed?.min_temperature ?? dMin0
   const obsMax = observed?.max_temperature ?? dMax0
   const obsMinModel = observed?.min_temperature == null && dMin0 != null
   const obsMaxModel = observed?.max_temperature == null && dMax0 != null
-  const d1To = day1?.to_temperature ?? dMax0
-  const d2To = day2?.to_temperature ?? dMax1
-  const d1ToModel = day1?.to_temperature == null && dMax0 != null
-  const d2ToModel = day2?.to_temperature == null && dMax1 != null
+
+  // Every forecast day the API actually ships, labeled by its real calendar date
+  // (DHM numbers days from the issue date — entries are NOT always 1 and 2).
+  const dayRows = useMemo(() => {
+    const list = [...(city?.manual_forecast ?? [])].sort((a, b) => (a.day ?? 0) - (b.day ?? 0))
+    return list.map(f => {
+      const dn = f.day ?? 1
+      const model = daily[dn - 1]
+      const to = f.to_temperature ?? model?.max ?? null
+      return {
+        d: f,
+        to,
+        toModel: f.to_temperature == null && to != null,
+        from: f.from_temperature ?? model?.min ?? null,
+        fromModel: f.from_temperature == null && model?.min != null,
+        label: dn === 1 ? 'Today' : dn === 2 ? 'Tomorrow' : forecastDayLabel(dn, forecastAt),
+        sub: dn <= 2 ? forecastDayLabel(dn, forecastAt) : '',
+      }
+    })
+  }, [city, daily, forecastAt])
 
   /** Closest sibling stations for the "nearby" strip. */
   const nearbyStations = useMemo(() => {
@@ -164,7 +218,7 @@ export default function CityDetailPage() {
     <div className="content-wrap">
       <Link href="/environment" className="text-button"><ArrowLeft size={14} /> All places</Link>
 
-      <div className="env-hero" style={{ marginTop: '.75rem' }}>
+      <div className={`env-hero${night ? ' night' : ''}`} style={{ marginTop: '.75rem' }}>
         <div className="env-hero-grid">
           <div>
             <p style={{ fontSize: '.6rem', letterSpacing: '.16em', fontWeight: 700, opacity: .7, margin: 0 }}>
@@ -182,10 +236,13 @@ export default function CityDetailPage() {
                 <span style={{ fontSize: '.75rem', opacity: .85 }}>{day1?.weather?.name ?? ''}</span>
               </div>
               {[
-                { label: obsMinModel || obsMaxModel ? 'Observed min / max · model' : 'Observed min / max', val: <><Val v={obsMin} model={obsMinModel} /> / <Val v={obsMax} model={obsMaxModel} /></> },
+                { label: 'Observed min / max', val: <><Val v={obsMin} model={obsMinModel} /> / <Val v={obsMax} model={obsMaxModel} /></> },
                 { label: 'Rainfall today', val: observed?.rainfall != null ? `${observed.rainfall} mm` : '-' },
                 { label: 'Humidity', val: wx?.relative_humidity_2m != null ? `${wx.relative_humidity_2m}%` : '-' },
                 { label: 'PM2.5', val: pm25 != null ? `${pm25.toFixed(1)} µg/m³` : '-' },
+                ...(city?.sunrise && city?.sunset
+                  ? [{ label: 'Sunrise / sunset', val: <>{shortClock(city.sunrise)} · {shortClock(city.sunset)}</> }]
+                  : []),
               ].map(item => (
                 <div key={item.label}>
                   <span style={{ fontSize: '.55rem', opacity: .6, textTransform: 'uppercase', letterSpacing: '.1em' }}>{item.label}</span>
@@ -195,22 +252,67 @@ export default function CityDetailPage() {
             </div>
           </div>
           <div className="wx-stage" title={day1?.weather?.name ?? SKY_META[kind].label}>
-            <span className="wx-halo"><WeatherIcon kind={kind} size={130} /></span>
-            <span className="wx-caption">{day1?.weather?.name ?? SKY_META[kind].label}</span>
+            <span className="wx-halo"><WeatherIcon kind={kind} size={130} night={night} /></span>
+            <span className="wx-caption">{day1?.weather?.name ?? SKY_META[kind].label}{night ? ' · night' : ''}</span>
           </div>
         </div>
       </div>
+
+      {/* ── Across today: 24h curve + min/now/max ── */}
+      {(hourly.length > 1 || obsMin != null || obsMax != null) && (
+        <section className="panel" style={{ marginBottom: '.75rem' }}>
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">ACROSS TODAY</p>
+              <h2>How the day moves</h2>
+            </div>
+            <span className="muted" style={{ fontSize: '.68rem' }}>Model curve · observed anchors</span>
+          </div>
+          {hourly.length > 1 && (
+            <div style={{ marginTop: '.6rem' }}>
+              <LineChart
+                data={hourly.filter((_, i) => i % 2 === 0).map(h => ({ year: h.time, value: h.value }))}
+                color="var(--primary)"
+                height={110}
+                formatValue={v => `${v.toFixed(1)}°C`}
+              />
+            </div>
+          )}
+          {obsMin != null && obsMax != null && obsMax > obsMin && (
+            <div style={{ marginTop: '.6rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.6rem', fontWeight: 700, marginBottom: '.3rem' }}>
+                <span className="text-tertiary">Low {Math.round(obsMin)}°</span>
+                <span className="text-primary">Now {wx?.temperature_2m != null ? `${wx.temperature_2m.toFixed(1)}°` : '—'}</span>
+                <span className="text-tertiary">High {Math.round(obsMax)}°</span>
+              </div>
+              <div style={{ height: 8, borderRadius: 99, background: 'var(--border-light)', position: 'relative' }}>
+                <span style={{
+                  position: 'absolute',
+                  left: wx?.temperature_2m != null
+                    ? `calc(${Math.min(100, Math.max(0, ((wx.temperature_2m - obsMin) / (obsMax - obsMin)) * 100))}% - 7px)`
+                    : '50%',
+                  top: -3, width: 14, height: 14, borderRadius: '50%',
+                  background: 'var(--bg-elevated)', border: '3px solid var(--primary)', boxShadow: 'var(--shadow-sm)',
+                }} />
+              </div>
+            </div>
+          )}
+          {hourly.length > 1 && (
+            <HourlyDetails hourly={hourly} />
+          )}
+        </section>
+      )}
 
       <section className="feature-grid">
         <article className="panel">
           <p className="eyebrow">DHM · TWO-DAY OUTLOOK</p>
           <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: '1.1rem', margin: '.15rem 0 .6rem' }}>What&apos;s coming</h3>
-          {[{ d: day1, to: d1To, toModel: d1ToModel, label: 'Today' }, { d: day2, to: d2To, toModel: d2ToModel, label: 'Tomorrow' }].map((row, i) =>
+          {dayRows.map((row, i) =>
             row.d ? (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '.8rem', padding: '.7rem 0', borderTop: i ? '1px solid var(--border-light)' : 0 }}>
-                <span style={{ fontSize: '.68rem', fontWeight: 700, color: 'var(--text-tertiary)', minWidth: 52 }}>{row.label}</span>
-                <Thermometer size={15} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-                <strong style={{ fontSize: '1rem' }}>{row.d.from_temperature ?? '-'}° / <Val v={row.to} model={row.toModel} /></strong>
+              <div key={row.d.day ?? i} style={{ display: 'flex', alignItems: 'center', gap: '.8rem', padding: '.7rem 0', borderTop: i ? '1px solid var(--border-light)' : 0 }}>
+                <span style={{ fontSize: '.68rem', fontWeight: 700, color: 'var(--text-tertiary)', minWidth: 76 }}>{row.label}{row.sub ? ` · ${row.sub}` : ''}</span>
+                <WeatherIcon kind={skyKind(row.d.weather?.name)} size={36} night={night} />
+                <strong style={{ fontSize: '1rem' }}><Val v={row.d.from_temperature} model={row.fromModel} /> / <Val v={row.to} model={row.toModel} /></strong>
                 <span style={{ fontSize: '.72rem', color: 'var(--text-secondary)', flex: 1 }}>{row.d.weather?.name ?? ''}</span>
                 <span className={`status-badge ${row.d.rain_probability > 40 ? 'status-warn' : 'status-good'}`}>
                   <Droplets size={11} /> {row.d.rain_probability}%

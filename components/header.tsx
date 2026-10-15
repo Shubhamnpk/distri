@@ -14,6 +14,7 @@ const navItems = [
   { href: '/procurement', label: 'Procurement' },
   { href: '/economy', label: 'Economy' },
   { href: '/environment', label: 'Environment' },
+  { href: '/calendar', label: 'Calendar' },
 ]
 
 export function Header() {
@@ -33,6 +34,9 @@ export function Header() {
     e.preventDefault()
     if (query.trim()) router.push(`/companies?q=${encodeURIComponent(query.trim())}`)
   }
+
+  // Full-bleed atlas route renders its own chrome.
+  if (pathname === '/projects/map') return null
 
   return (
     <header className="topbar">

@@ -1,15 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { TrendingUp, TrendingDown, ExternalLink, Activity, LineChart as LineChartIcon, Building2, MapPin, Phone } from 'lucide-react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { TrendingUp, TrendingDown, ExternalLink, Activity, LineChart as LineChartIcon, Building2, MapPin, Phone, FileText } from 'lucide-react'
 import { LineChart } from '@/components/charts'
 import { StatusBadge } from '@/components/shared'
 import {
   fetchNepseStocks, fetchNepseCompanyFinancials, fetchNepseCompanyProfiles,
-  fetchNepseIndex, fetchLtpRecent, formatNprAmount, formatNumber, groupReportsByFy, sortReportsByPeriod,
+  fetchNepseIndex, fetchLtpRecent, formatNprAmount, formatNumber, groupReportsByFy, latestAnnualCompanyResult, sortReportsByPeriod,
 } from '@/lib/nepse'
 import { symbolForCompany } from '@/lib/company-symbols'
+import { formatNprOrNA, formatNprText } from '@/lib/currency'
+import { formatFiscalYearLabel } from '@/lib/fiscal-year'
 import type { NepseStock, NepseCompanyProfile, NepseReport, Company } from '@/lib/types'
+import { getCompanyCategory } from '@/lib/company-categories'
 
 export type CompanyMarket = {
   stock: NepseStock | null
@@ -20,6 +23,49 @@ export type CompanyMarket = {
   indexLine: string | null
   loading: boolean
   notListed: boolean
+}
+
+const CompanyMarketContext = createContext<CompanyMarket | null>(null)
+
+export function CompanyMarketProvider({ companyName, children }: { companyName: string; children: ReactNode }) {
+  const market = useCompanyMarket(companyName)
+  return <CompanyMarketContext.Provider value={market}>{children}</CompanyMarketContext.Provider>
+}
+
+function useCompanyMarketContext() {
+  const market = useContext(CompanyMarketContext)
+  if (!market) throw new Error('CompanyMarketProvider is required on company detail pages')
+  return market
+}
+
+export function CompanyFinancialYear({ company }: { company: Company }) {
+  const { reports } = useCompanyMarketContext()
+  const latest = latestAnnualCompanyResult(reports ?? [])
+  return <>{latest?.fy ? `FY ${formatFiscalYearLabel(latest.fy, latest.fyNepali)}` : formatFiscalYearLabel(company.year)}</>
+}
+
+export function CompanyLiveResult({ company }: { company: Company }) {
+  const { reports, loading } = useCompanyMarketContext()
+  const latestAnnual = latestAnnualCompanyResult(reports ?? [])
+  const live = !loading && latestAnnual != null
+  const profit = live ? latestAnnual.profit : null
+  const positive = live ? profit! >= 0 : !/^\s*-/.test(company.result)
+  const unknown = !live && company.resultType === 'unknown'
+  const tint = unknown ? 'var(--text-secondary)' : positive ? 'var(--primary)' : 'var(--danger)'
+  const label = live
+    ? `Annual net result · FY ${formatFiscalYearLabel(latestAnnual.fy, latestAnnual.fyNepali)}`
+    : `Net result · ${company.year}`
+  const value = live ? formatNprAmount(profit) : formatNprOrNA(company.result)
+
+  return <>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.3rem', fontSize: '.62rem', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: tint }}>
+      {unknown ? <FileText size={13} /> : positive ? <TrendingUp size={13} /> : <TrendingDown size={13} />} {label}
+    </span>
+    <strong style={{ display: 'block', marginTop: '.35rem', fontSize: '1.65rem', fontWeight: 800, letterSpacing: '-.03em', lineHeight: 1, color: tint }}>{value}</strong>
+    <span style={{ display: 'block', marginTop: '.35rem', fontSize: '.66rem', color: tint, opacity: .8 }}>
+      {live ? `Reported by NEPSE · ${symbolForCompany(company.name)}` : loading ? `Checking latest NEPSE filings · fallback: ${company.source}` : unknown ? 'Result not reported' : positive ? 'Profitable' : company.operatingStatus === 'Closed' ? 'No operations' : 'Loss-making'}
+    </span>
+  </>
 }
 
 /** Single NEPSE data load per company: match by name, then filings + profile + index + history. */
@@ -48,9 +94,12 @@ export function useCompanyMarket(companyName: string): CompanyMarket {
         if (cancelled) return
         const hit = stocks.find(s => s.symbol.toUpperCase() === exact)
         if (!hit) {
+          setStock(null)
+          setReports(null)
           setNotListed(true)
           return
         }
+        setNotListed(false)
         setStock(hit)
         const order = [...stocks].sort((a, b) => (b.turnover ?? 0) - (a.turnover ?? 0))
         const pos = order.findIndex(s => s.symbol === hit.symbol)
@@ -78,7 +127,11 @@ export function useCompanyMarket(companyName: string): CompanyMarket {
       }
     }
     load()
-    return () => { cancelled = true }
+    const refreshTimer = window.setInterval(() => { void load() }, 60 * 60 * 1000)
+    return () => {
+      cancelled = true
+      window.clearInterval(refreshTimer)
+    }
   }, [companyName])
 
   return { stock, reports, profile, history, rank, indexLine, loading, notListed }
@@ -86,6 +139,7 @@ export function useCompanyMarket(companyName: string): CompanyMarket {
 
 /** ── Market performance: price, ranges, history, latest filing ── */
 export function MarketSection({ market }: { market: CompanyMarket }) {
+  const [expanded, setExpanded] = useState(false)
   const { stock, history, rank, indexLine, loading, notListed } = market
   if (loading) {
     return (
@@ -100,10 +154,9 @@ export function MarketSection({ market }: { market: CompanyMarket }) {
     return (
       <section className="panel">
         <p className="eyebrow" style={{ margin: 0 }}>MARKET PERFORMANCE</p>
-        <h2 className="font-serif" style={{ fontWeight: 500, fontSize: '1.15rem', margin: '.2rem 0 0' }}>Not listed on NEPSE</h2>
+        <h2 className="font-serif" style={{ fontWeight: 500, fontSize: '1.15rem', margin: '.2rem 0 0' }}>No live NEPSE match</h2>
         <p className="muted" style={{ marginTop: '.4rem' }}>
-          No matching NEPSE symbol found. Many state enterprises are unlisted or trade infrequently —
-          the MoF annual figures below are canonical for this company.
+          No verified symbol currently matches this company in the exact-symbol tracker. It may be unlisted, inactive, or awaiting verification; the MoF annual figures below remain available.
         </p>
         <a href="https://nepalstock.com" target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '.25rem', marginTop: '.6rem', fontSize: '.68rem', fontWeight: 600 }} className="text-primary">
           Search NEPSE <ExternalLink size={12} />
@@ -116,10 +169,10 @@ export function MarketSection({ market }: { market: CompanyMarket }) {
   const dayRange = stock.high > stock.low ? Math.min(100, Math.max(0, ((stock.ltp - stock.low) / (stock.high - stock.low)) * 100)) : null
   const histMin = history?.length ? Math.min(...history.map(h => h.close)) : null
   const histMax = history?.length ? Math.max(...history.map(h => h.close)) : null
-  const latestRep = [...sortReportsByPeriod(market.reports ?? [])].reverse().find(r => r.profit != null) ?? null
+  const latestAnnual = latestAnnualCompanyResult(market.reports ?? [])
 
   return (
-    <section className="panel">
+    <section className="panel" id="market-performance">
       <p className="eyebrow" style={{ margin: 0 }}>MARKET PERFORMANCE · NEPSE</p>
       <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', marginTop: '.4rem', flexWrap: 'wrap' }}>
         <div className={up ? 'bg-primary-50 text-primary rounded-[8px]' : 'bg-red-50 text-red-600 rounded-[8px]'} style={{ width: 34, height: 34, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
@@ -127,7 +180,7 @@ export function MarketSection({ market }: { market: CompanyMarket }) {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <h2 className="font-serif" style={{ fontWeight: 500, fontSize: '1.3rem', margin: 0 }}>
-            {stock.symbol} · NPR {stock.ltp.toLocaleString()}
+            {stock.symbol} · {formatNprAmount(stock.ltp)}
           </h2>
           <p className="muted" style={{ margin: '.1rem 0 0' }}>
             {stock.companyName}{rank ? ` · turnover rank #${rank.byTurnover} of ${rank.of}` : ''}{indexLine ? ` · ${indexLine}` : ''}
@@ -139,8 +192,12 @@ export function MarketSection({ market }: { market: CompanyMarket }) {
         <a href={`https://nepalstock.com/company/${stock.symbol}`} target="_blank" rel="noreferrer" className="bg-primary-50 text-primary inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold">
           View <ExternalLink size={11} />
         </a>
+        <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)} className="border border-line-light bg-card text-secondary rounded-md px-2 py-1 text-xs font-semibold">
+          {expanded ? 'Hide market details' : 'Show market details'}
+        </button>
       </div>
 
+      {expanded && <div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '.5rem', marginTop: '.8rem' }}>
         <div style={{ padding: '.6rem' }} className="bg-sunken rounded-[8px]">
           <span style={{ fontSize: '.6rem', letterSpacing: '.06em', textTransform: 'uppercase' }} className="text-tertiary">Day range</span>
@@ -157,11 +214,11 @@ export function MarketSection({ market }: { market: CompanyMarket }) {
           <span style={{ fontSize: '.62rem' }} className="text-secondary">{formatNprAmount(stock.turnover)}</span>
         </div>
         <div style={{ padding: '.6rem' }} className="bg-sunken rounded-[8px]">
-          <span style={{ fontSize: '.6rem', letterSpacing: '.06em', textTransform: 'uppercase' }} className="text-tertiary">Latest filed profit</span>
-          <strong style={{ display: 'block', fontSize: '.8rem', marginTop: '.1rem' }} className={(latestRep?.profit ?? 0) >= 0 ? 'positive' : 'negative'}>
-            {latestRep?.profit != null ? formatNprAmount(latestRep.profit) : '—'}
+          <span style={{ fontSize: '.6rem', letterSpacing: '.06em', textTransform: 'uppercase' }} className="text-tertiary">Latest annual result</span>
+          <strong style={{ display: 'block', fontSize: '.8rem', marginTop: '.1rem' }} className={(latestAnnual?.profit ?? 0) >= 0 ? 'positive' : 'negative'}>
+            {latestAnnual ? formatNprAmount(latestAnnual.profit) : 'N/A'}
           </strong>
-          <span style={{ fontSize: '.62rem' }} className="text-secondary">{latestRep ? `${latestRep.quarter} ${latestRep.fy}` : 'No filings yet'}</span>
+          <span style={{ fontSize: '.62rem' }} className="text-secondary">{latestAnnual ? `FY ${formatFiscalYearLabel(latestAnnual.fy, latestAnnual.fyNepali)} · ${latestAnnual.basis === 'annual' ? 'Annual filing' : 'Q1–Q4 total'}` : 'No full-year filing yet'}</span>
         </div>
       </div>
 
@@ -171,32 +228,107 @@ export function MarketSection({ market }: { market: CompanyMarket }) {
             <span style={{ fontSize: '.6rem', letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 600 }} className="text-tertiary">Price · recent sessions</span>
             <span style={{ fontSize: '.6rem' }} className="text-tertiary">{history[0]?.date} → {history[history.length - 1]?.date}</span>
           </div>
-          <LineChart data={history.map(h => ({ year: h.date.slice(5), value: h.close }))} color={up ? 'var(--primary)' : 'var(--danger)'} height={110} formatValue={v => `NPR ${v.toLocaleString()}`} />
+          <LineChart data={history.map(h => ({ year: h.date.slice(5), value: h.close }))} color={up ? 'var(--primary)' : 'var(--danger)'} height={110} formatValue={formatNprAmount} />
           {histMin != null && histMax != null && (
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.6rem', marginTop: '.2rem' }} className="text-tertiary">
-              <span>Period low NPR {Math.round(histMin).toLocaleString()}</span>
-              <span>Period high NPR {Math.round(histMax).toLocaleString()}</span>
+              <span>Period low {formatNprAmount(histMin)}</span>
+              <span>Period high {formatNprAmount(histMax)}</span>
             </div>
           )}
         </div>
       )}
+      </div>}
     </section>
   )
 }
 
 /** ── Quarterly reports: NEPSE filings first, MoF table as fallback ── */
-export function FilingsSection({ market, mofQuarters }: { market: CompanyMarket; mofQuarters: Company['quarters'] }) {
+export function FilingsSection({ market, company }: { market: CompanyMarket; company: Company }) {
   const { reports, loading } = market
   if (loading) return null
+  if (company.publicFundFinancials?.length) {
+    const metrics = [
+      ['Contributions', 'contributions'],
+      ['Investment income', 'investmentIncome'],
+      ['Total operating income', 'operatingIncome'],
+      ['Claims submitted', 'claimsSubmitted'],
+      ['Benefits paid', 'benefitsPaid'],
+      ['Operating expenses', 'operatingExpenses'],
+      ['Annual fund surplus', 'annualSurplus'],
+      ['Total assets', 'totalAssets'],
+      ['Fund reserves', 'fundReserves'],
+    ] as const
+    return (
+      <section className="panel">
+        <p className="eyebrow" style={{ margin: 0 }}>PUBLIC FUND FINANCIALS</p>
+        <h2 className="font-serif" style={{ fontWeight: 500, fontSize: '1.15rem', margin: '.2rem 0 0' }}>Annual fund statements</h2>
+        <p className="muted" style={{ marginTop: '.25rem' }}>Fund income, benefits and balances from published annual reports. These are not company revenue or profit.</p>
+        <div style={{ marginTop: '.75rem' }}>
+          {[...company.publicFundFinancials].reverse().map((annual) => (
+            <details key={annual.year} className="border border-line-light rounded-[8px]" style={{ marginTop: '.45rem' }}>
+              <summary style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', cursor: 'pointer', listStyle: 'none', padding: '.7rem .8rem', background: 'var(--bg-sunken)' }}>
+                <strong style={{ minWidth: 120, fontSize: '.78rem' }}>{annual.year}</strong>
+                {annual.operatingIncome && <span style={{ display: 'grid', gap: '.12rem', fontSize: '.68rem' }}><small className="text-tertiary">Operating income</small><strong>{formatNprOrNA(annual.operatingIncome)}</strong></span>}
+                {annual.annualSurplus && <span style={{ display: 'grid', gap: '.12rem', fontSize: '.68rem' }}><small className="text-tertiary">Fund surplus</small><strong className="positive">{formatNprOrNA(annual.annualSurplus)}</strong></span>}
+                {annual.claimsSubmitted && <span style={{ display: 'grid', gap: '.12rem', fontSize: '.68rem' }}><small className="text-tertiary">Claims submitted</small><strong>{formatNprOrNA(annual.claimsSubmitted)}</strong></span>}
+                {annual.totalAssets && <span style={{ display: 'grid', gap: '.12rem', fontSize: '.68rem' }}><small className="text-tertiary">Total assets</small><strong>{formatNprOrNA(annual.totalAssets)}</strong></span>}
+                <span className="text-tertiary" style={{ marginLeft: 'auto', fontSize: '.62rem' }}>Report details</span>
+              </summary>
+              <div style={{ padding: '.7rem .8rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: '.5rem' }}>
+                  {metrics.map(([label, key]) => {
+                    const value = annual[key]
+                    return value ? <div key={key} className="bg-sunken rounded-[8px]" style={{ padding: '.55rem .65rem' }}>
+                      <small className="text-tertiary" style={{ display: 'block', fontSize: '.62rem' }}>{label}</small>
+                      <strong style={{ display: 'block', marginTop: '.12rem', fontSize: '.78rem' }}>{formatNprOrNA(value)}</strong>
+                    </div> : null
+                  })}
+                </div>
+                {annual.note && <p className="text-secondary" style={{ margin: '.6rem 0 .25rem', fontSize: '.7rem', lineHeight: 1.6 }}>{annual.note}</p>}
+                <span className="text-tertiary" style={{ fontSize: '.66rem' }}>Source: {annual.source}</span>
+                <a href={annual.sourceUrl} target="_blank" rel="noreferrer" className="text-primary" style={{ marginLeft: '.45rem', fontSize: '.68rem' }}>Open report ↗</a>
+              </div>
+            </details>
+          ))}
+        </div>
+      </section>
+    )
+  }
   if (!reports?.length) {
     return (
       <section className="panel">
-        <p className="eyebrow" style={{ margin: 0 }}>QUARTERLY BREAKDOWN · MOF REVIEW</p>
-        <h2 className="font-serif" style={{ fontWeight: 500, fontSize: '1.15rem', margin: '.2rem 0 0' }}>Q1–Q4 performance</h2>
+        <p className="eyebrow" style={{ margin: 0 }}>ANNUAL SUMMARY · COMPANY / MOF DATA</p>
+        <h2 className="font-serif" style={{ fontWeight: 500, fontSize: '1.15rem', margin: '.2rem 0 0' }}>Annual financials</h2>
         <p className="muted" style={{ marginTop: '.25rem' }}>
-          No NEPSE filings found — figures below come from the MoF annual review. Unavailable quarters are marked Pending/Unknown.
+          {company.annualFinancials?.length ? 'Annual figures come from the linked reports. Expand a year for its source and reporting notes.' : 'No NEPSE filings found. Annual figures are shown first; expand the year only if you need quarter detail.'}
         </p>
-        <div style={{ marginTop: '.85rem', overflowX: 'auto' }}>
+        {company.annualFinancials?.length ? (
+          <div style={{ marginTop: '.75rem' }}>
+            {[...company.annualFinancials].reverse().map((annual) => (
+              <details key={annual.year} className="border border-line-light rounded-[8px]" style={{ marginTop: '.45rem' }}>
+                <summary style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', cursor: 'pointer', listStyle: 'none', padding: '.7rem .8rem', background: 'var(--bg-sunken)' }}>
+                  <strong style={{ minWidth: 150, fontSize: '.78rem' }}>{annual.year}</strong>
+                  <span style={{ display: 'grid', gap: '.12rem', fontSize: '.68rem' }}><small className="text-tertiary">Revenue / income</small><strong>{annual.revenue ?? 'N/A'}</strong></span>
+                  <span style={{ display: 'grid', gap: '.12rem', fontSize: '.68rem' }}><small className="text-tertiary">Net result</small><strong>{annual.result ?? 'N/A'}</strong></span>
+                  <span className="text-tertiary" style={{ marginLeft: 'auto', fontSize: '.62rem' }}>Report details</span>
+                </summary>
+                {(annual.note || annual.source || annual.sourceUrl) && <div style={{ padding: '.65rem .8rem', fontSize: '.7rem', lineHeight: 1.6 }}>
+                  {annual.note && <p className="text-secondary" style={{ margin: '0 0 .3rem' }}>{annual.note}</p>}
+                  {annual.source && <span className="text-tertiary">Source: {annual.source}</span>}
+                  {(annual.sourceUrl || company.sourceUrl) && <a href={annual.sourceUrl || company.sourceUrl} target="_blank" rel="noreferrer" className="text-primary" style={{ marginLeft: '.4rem' }}>Open report ↗</a>}
+                </div>}
+              </details>
+            ))}
+          </div>
+        ) : (
+        <details className="border border-line-light rounded-[8px]" style={{ marginTop: '.75rem' }}>
+          <summary style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', cursor: 'pointer', listStyle: 'none', padding: '.7rem .8rem', background: 'var(--bg-sunken)' }}>
+            <strong style={{ minWidth: 150, fontSize: '.78rem' }}>FY {formatFiscalYearLabel(company.year)}</strong>
+            <span style={{ display: 'grid', gap: '.12rem', fontSize: '.68rem' }}><small className="text-tertiary">Revenue</small><strong>{formatNprOrNA(company.revenue)}</strong></span>
+            <span style={{ display: 'grid', gap: '.12rem', fontSize: '.68rem' }}><small className="text-tertiary">Net result</small><strong>{company.resultType === 'unknown' ? 'N/A' : formatNprOrNA(company.result)}</strong></span>
+            <span className="text-tertiary" style={{ marginLeft: 'auto', fontSize: '.62rem' }}>Quarterly details</span>
+          </summary>
+          <div style={{ overflowX: 'auto', padding: '.25rem .7rem .7rem' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.78rem' }}>
             <thead>
               <tr className="text-tertiary" style={{ textAlign: 'left', fontSize: '.68rem', letterSpacing: '.06em', textTransform: 'uppercase' }}>
@@ -207,13 +339,13 @@ export function FilingsSection({ market, mofQuarters }: { market: CompanyMarket;
               </tr>
             </thead>
             <tbody>
-              {mofQuarters.map(q => (
+              {company.quarters.map(q => (
                 <tr key={q.label} className="border-t border-line-light">
                   <td style={{ padding: '.7rem .6rem', fontWeight: 700 }}>{q.label}</td>
-                  <td className="text-secondary" style={{ padding: '.7rem .6rem' }}>{q.revenue}</td>
+                  <td className="text-secondary" style={{ padding: '.7rem .6rem' }}>{formatNprOrNA(q.revenue)}</td>
                   <td style={{ padding: '.7rem .6rem' }}>
                     <span style={{ fontWeight: 600, color: q.result.startsWith('+') || q.result.toLowerCase().includes('profit') || q.result.includes('Dividend') ? 'var(--primary)' : q.result.startsWith('-') || q.result.toLowerCase().includes('loss') ? 'var(--danger)' : 'var(--text)' }}>
-                      {q.result}
+                      {formatNprOrNA(q.result)}
                     </span>
                   </td>
                   <td style={{ padding: '.7rem .6rem' }}><StatusBadge status={q.state} /></td>
@@ -221,96 +353,53 @@ export function FilingsSection({ market, mofQuarters }: { market: CompanyMarket;
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </details>
+        )}
       </section>
     )
   }
 
   const groups = groupReportsByFy(reports)
   const groupsDesc = [...groups].reverse()
-  const totals = groups.filter(g => g.total != null)
-  const firstTotal = totals[0]?.total ?? null
-  const lastTotal = totals[totals.length - 1]?.total ?? null
-  const trendUp = firstTotal != null && lastTotal != null && totals.length > 1 ? lastTotal >= firstTotal : null
-  const latestWithNumbers = [...(reports ?? [])].reverse().find(r => r.profit != null || r.eps != null || r.net_worth_per_share != null) ?? null
-  const shownGroups = groupsDesc.slice(0, 3)
-  const hiddenCount = reports.length - shownGroups.reduce((a, g) => a + g.quarters.length + (g.annual ? 1 : 0), 0)
-
   const shortQ = (q: string) => q.replace(' Quarter', 'Q').replace('First', 'Q1').replace('Second', 'Q2').replace('Third', 'Q3').replace('Fourth', 'Q4')
+  const yearlyRevenue = (g: (typeof groups)[number]) => {
+    if (g.annual?.revenue != null) return formatNprAmount(g.annual.revenue)
+    const quarterlyRevenue = g.quarters.map(report => report.revenue)
+    if (quarterlyRevenue.length === 4 && quarterlyRevenue.every(value => value != null)) {
+      return formatNprAmount(quarterlyRevenue.reduce<number>((sum, value) => sum + (value ?? 0), 0))
+    }
+    const fiscalLabel = formatFiscalYearLabel(g.fy, g.fyNepali)
+    const fiscalBsYear = fiscalLabel.match(/20\d{2}\/\d{2,4}/)?.[0]
+    const years = [g.fy, g.fyNepali, fiscalBsYear].filter((year): year is string => !!year)
+    return years.some(year => company.year.includes(year)) ? formatNprOrNA(company.revenue) : 'N/A'
+  }
 
   return (
     <section className="panel">
       <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem' }}>
         <span className="bg-primary-50 text-primary grid place-items-center rounded-[7px]" style={{ width: 24, height: 24, display: 'grid', placeItems: 'center' }}><LineChartIcon size={12} /></span>
-        <p className="eyebrow" style={{ margin: 0 }}>QUARTERLY REPORTS · NEPSE FILINGS</p>
-        {trendUp !== null && (
-          <span className={trendUp ? 'bg-primary-50 text-primary rounded-[20px]' : 'bg-red-50 text-red-600 rounded-[20px]'} style={{ marginLeft: 'auto', fontSize: '.62rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '.2rem', padding: '.2rem .45rem' }}>
-            {trendUp ? <TrendingUp size={11} /> : <TrendingDown size={11} />} {trendUp ? 'Profit rising' : 'Profit falling'}
-          </span>
-        )}
+        <p className="eyebrow" style={{ margin: 0 }}>ANNUAL FINANCIALS · NEPSE FILINGS</p>
       </div>
       <h2 className="font-serif" style={{ fontWeight: 500, fontSize: '1.15rem', margin: '.3rem 0 0' }}>
-        {reports.length} filings <small style={{ fontSize: '.68rem', fontFamily: 'var(--font)' }} className="text-tertiary">grouped by fiscal year</small>
+        Yearly results <small style={{ fontSize: '.68rem', fontFamily: 'var(--font)' }} className="text-tertiary">{groupsDesc.length} fiscal years · quarter reports collapsed</small>
       </h2>
-
-      {/* Top-header key metrics — latest filed values when available */}
-      {latestWithNumbers && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '.45rem', marginTop: '.7rem' }}>
-          {[
-            { label: 'Net worth / share', val: latestWithNumbers.net_worth_per_share != null ? latestWithNumbers.net_worth_per_share.toFixed(1) : null },
-            { label: 'Profit', val: latestWithNumbers.profit != null ? formatNprAmount(latestWithNumbers.profit) : null, accent: (latestWithNumbers.profit ?? 0) >= 0 },
-            { label: 'EPS', val: latestWithNumbers.eps != null ? latestWithNumbers.eps.toFixed(2) : null },
-          ].filter(m => m.val != null).map(m => (
-            <div key={m.label} style={{ padding: '.55rem .65rem', textAlign: 'center' }} className="bg-sunken rounded-[8px]">
-              <span style={{ fontSize: '.56rem', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }} className="text-tertiary">{m.label}</span>
-              <strong style={{ display: 'block', fontSize: '.95rem', marginTop: '.1rem' }} className={m.accent === undefined ? '' : m.accent ? 'positive' : 'negative'}>{m.val}</strong>
-              <span style={{ fontSize: '.58rem' }} className="text-tertiary">{latestWithNumbers.quarter} {latestWithNumbers.fy}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Year-over-year story */}
-      {totals.length > 1 && (
-        <div style={{ display: 'flex', gap: '.45rem', marginTop: '.7rem', overflowX: 'auto', paddingBottom: '.2rem' }}>
-          {[...groups].reverse().filter(g => g.total != null).map(g => (
-            <div key={g.fy} style={{ flex: '1 0 150px', padding: '.6rem .7rem', border: '1px solid var(--border-light)' }} className="bg-card rounded-[10px]">
-              <span style={{ fontSize: '.6rem', fontWeight: 700 }} className="text-tertiary">FY {g.fy}</span>
-              <strong style={{ display: 'block', fontSize: '.9rem', marginTop: '.15rem', color: (g.total ?? 0) >= 0 ? 'var(--primary)' : 'var(--danger)' }}>
-                {g.total != null ? formatNprAmount(g.total) : '—'}
-              </strong>
-              <span style={{ fontSize: '.62rem', fontWeight: 700 }} className={g.yoy == null ? 'text-tertiary' : g.yoy >= 0 ? 'positive' : 'negative'}>
-                {g.yoy == null ? (g.totalBasis === 'annual' ? 'Audited annual' : `Sum of quarters`) : `${g.yoy >= 0 ? '+' : ''}${g.yoy.toFixed(1)}% YoY`}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Grouped filings */}
-      {shownGroups.map(g => (
-        <div key={g.fy} style={{ marginTop: '.8rem', overflowX: 'auto' }} className="border border-line-light rounded-[8px]">
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '.5rem', padding: '.5rem .6rem', background: 'var(--bg-sunken)' }}>
-            <strong style={{ fontSize: '.74rem' }}>FY {g.fy}</strong>
-            {g.total != null && (
-              <span style={{ fontSize: '.68rem', fontWeight: 700, color: g.total >= 0 ? 'var(--primary)' : 'var(--danger)' }}>
-                {formatNprAmount(g.total)}
-              </span>
-            )}
-            {g.yoy != null && (
-              <span style={{ fontSize: '.62rem', fontWeight: 700 }} className={g.yoy >= 0 ? 'positive' : 'negative'}>
-                {g.yoy >= 0 ? '▲' : '▼'} {Math.abs(g.yoy).toFixed(1)}% vs prior FY
-              </span>
-            )}
-            <span style={{ marginLeft: 'auto', fontSize: '.58rem' }} className="text-tertiary">
-              {g.totalBasis === 'annual' ? 'audited annual' : g.totalBasis === 'quarters' ? `sum of ${g.quarters.length} quarters` : ''}
-            </span>
-          </div>
+      {groupsDesc.map(g => {
+        const profitLabel = g.total != null ? formatNprAmount(g.total) : 'N/A'
+        return <details key={g.fy} className="border border-line-light rounded-[8px]" style={{ marginTop: '.65rem' }}>
+          <summary style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', cursor: 'pointer', listStyle: 'none', padding: '.7rem .8rem', background: 'var(--bg-sunken)' }}>
+            <strong style={{ minWidth: 145, fontSize: '.76rem' }}>FY {formatFiscalYearLabel(g.fy, g.fyNepali)}</strong>
+            <span style={{ display: 'grid', gap: '.12rem', fontSize: '.67rem' }}><small className="text-tertiary">Revenue</small><strong>{yearlyRevenue(g)}</strong></span>
+            <span style={{ display: 'grid', gap: '.12rem', fontSize: '.67rem' }}><small className="text-tertiary">Net result</small><strong className={g.total == null ? 'text-tertiary' : g.total >= 0 ? 'positive' : 'negative'}>{profitLabel}</strong></span>
+            <span className="text-tertiary" style={{ marginLeft: 'auto', fontSize: '.61rem' }}>{g.totalBasis === 'annual' ? 'Annual report' : g.totalBasis === 'quarters' ? 'Quarter total' : 'No profit data'} · {g.quarters.length} quarter filings · click to expand</span>
+          </summary>
+          <div style={{ overflowX: 'auto', padding: '.25rem .7rem .7rem' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.7rem' }}>
             <thead>
               <tr style={{ textAlign: 'left', color: 'var(--text-tertiary)', fontSize: '.6rem', letterSpacing: '.06em', textTransform: 'uppercase' }}>
                 <th style={{ padding: '.4rem .6rem', fontWeight: 600 }}>Period</th>
-                <th style={{ padding: '.4rem .6rem', fontWeight: 600, textAlign: 'right' }}>Profit</th>
+                <th style={{ padding: '.4rem .6rem', fontWeight: 600, textAlign: 'right' }}>Revenue</th>
+                <th style={{ padding: '.4rem .6rem', fontWeight: 600, textAlign: 'right' }}>Net result</th>
                 <th style={{ padding: '.4rem .6rem', fontWeight: 600, textAlign: 'right' }}>EPS</th>
                 <th style={{ padding: '.4rem .6rem', fontWeight: 600, textAlign: 'right' }}>P/E</th>
                 <th style={{ padding: '.4rem .6rem', fontWeight: 600, textAlign: 'right' }}>Net worth/sh</th>
@@ -324,22 +413,21 @@ export function FilingsSection({ market, mofQuarters }: { market: CompanyMarket;
                     <td style={{ padding: '.45rem .6rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
                       {r.type === 'Annual Report' ? 'Annual' : shortQ(r.quarter)}
                     </td>
-                    <td style={{ padding: '.45rem .6rem', fontWeight: 600, color: pUp ? 'var(--primary)' : 'var(--danger)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{pUp ? '▲' : '▼'} {r.profit != null ? formatNprAmount(r.profit) : '—'}</td>
-                    <td style={{ padding: '.45rem .6rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.eps != null ? r.eps.toFixed(2) : '—'}</td>
-                    <td style={{ padding: '.45rem .6rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.pe != null ? r.pe.toFixed(1) : '—'}</td>
-                    <td style={{ padding: '.45rem .6rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.net_worth_per_share != null ? r.net_worth_per_share.toFixed(1) : '—'}</td>
+                    <td style={{ padding: '.45rem .6rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.revenue != null ? formatNprAmount(r.revenue) : 'N/A'}</td>
+                    <td style={{ padding: '.45rem .6rem', fontWeight: 600, color: r.profit == null ? 'var(--text-tertiary)' : pUp ? 'var(--primary)' : 'var(--danger)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.profit != null ? `${pUp ? '▲' : '▼'} ${formatNprAmount(r.profit)}` : 'N/A'}</td>
+                    <td style={{ padding: '.45rem .6rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.eps != null ? r.eps.toFixed(2) : 'N/A'}</td>
+                    <td style={{ padding: '.45rem .6rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.pe != null ? r.pe.toFixed(1) : 'N/A'}</td>
+                    <td style={{ padding: '.45rem .6rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.net_worth_per_share != null ? r.net_worth_per_share.toFixed(1) : 'N/A'}</td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
-        </div>
-      ))}
-      {hiddenCount > 0 && (
-        <p style={{ margin: '.5rem 0 0', fontSize: '.62rem' }} className="text-tertiary">+{hiddenCount} older filings — newest 3 fiscal years shown.</p>
-      )}
+          </div>
+        </details>
+      })}
       <p style={{ margin: '.5rem 0 0', fontSize: '.62rem', lineHeight: 1.5 }} className="text-tertiary">
-        Source: NEPSE filings via YONepse ({reports.filter(r => r.type === 'Annual Report').length} annual · {reports.filter(r => r.type !== 'Annual Report').length} quarterly). Year totals use audited annuals where filed, else the sum of that year&apos;s quarters.
+        Source: NEPSE filings via YONepse. Year profit uses an annual report when available; otherwise it sums reported quarterly profits. Revenue is shown only when the filing or matching company-year record provides it.
       </p>
     </section>
   )
@@ -378,10 +466,9 @@ export function CompanyInfoSection({ company, market }: { company: Company; mark
       )}
       <div style={{ display: 'flex', gap: '.4rem', flexWrap: 'wrap', marginTop: '.8rem' }}>
         {[
-          company.sector,
+          getCompanyCategory(company),
           company.operatingStatus,
-          `Coverage: ${company.coverage}`,
-          stock ? `${stock.symbol} · NPR ${stock.ltp.toLocaleString()}` : 'Unlisted on NEPSE',
+          stock ? `${stock.symbol} · ${formatNprAmount(stock.ltp)}` : 'Unlisted on NEPSE',
           rank ? `Turnover #${rank.byTurnover}/${rank.of}` : '',
           latestRep?.pe != null ? `P/E ${latestRep.pe.toFixed(1)}` : '',
           latestRep?.eps != null ? `EPS ${latestRep.eps.toFixed(2)}` : '',
@@ -398,11 +485,11 @@ export function CompanyInfoSection({ company, market }: { company: Company; mark
 
 /** Client sections for the (server) company detail page. */
 export function CompanyMarketSections({ company }: { company: Company }) {
-  const market = useCompanyMarket(company.name)
+  const market = useCompanyMarketContext()
   return (
     <>
       <MarketSection market={market} />
-      <FilingsSection market={market} mofQuarters={company.quarters} />
+      <FilingsSection market={market} company={company} />
       <CompanyInfoSection company={company} market={market} />
     </>
   )

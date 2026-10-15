@@ -1,3 +1,4 @@
+import { formatNpr } from '@/lib/currency'
 import type { NepseStock, NepseCompanyProfile, NepseCompanyFinancial, NepseMarketSummary, NepseData, NepseIndex, NepseReport } from './types'
 
 const BASE_URL = 'https://shubhamnpk.github.io/yonepse/data'
@@ -130,6 +131,7 @@ export function sortReportsByPeriod(reports: NepseReport[]): NepseReport[] {
 
 export type FyGroup = {
   fy: string
+  fyNepali?: string
   annual: NepseReport | null
   quarters: NepseReport[]
   /** Annual profit when filed, else the sum of that year's quarters. */
@@ -145,8 +147,9 @@ export function groupReportsByFy(reports: NepseReport[]): FyGroup[] {
   const order = new Map<string, FyGroup>()
   for (const r of sorted) {
     const key = r.fy || r.fy_nepali || 'Unknown'
-    if (!order.has(key)) order.set(key, { fy: key, annual: null, quarters: [], total: null, totalBasis: null, yoy: null })
+    if (!order.has(key)) order.set(key, { fy: key, fyNepali: r.fy_nepali, annual: null, quarters: [], total: null, totalBasis: null, yoy: null })
     const g = order.get(key)!
+    if (r.fy_nepali) g.fyNepali = r.fy_nepali
     if (r.type === 'Annual Report' && !g.annual) g.annual = r
     else g.quarters.push(r)
   }
@@ -167,6 +170,36 @@ export function groupReportsByFy(reports: NepseReport[]): FyGroup[] {
     if (g.total != null) prevTotal = g.total
   }
   return groups
+}
+
+export type AnnualCompanyResult = {
+  fy: string
+  fyNepali?: string
+  profit: number
+  basis: 'annual' | 'quarters'
+}
+
+/** Latest comparable full-year result; quarterly sums require Q1 through Q4. */
+export function latestAnnualCompanyResult(reports: NepseReport[]): AnnualCompanyResult | null {
+  const groups = groupReportsByFy(reports)
+  for (const group of [...groups].reverse()) {
+    if (group.annual?.profit != null) {
+      return { fy: group.fy, fyNepali: group.fyNepali, profit: group.annual.profit, basis: 'annual' }
+    }
+    const quarterResults = new Map(group.quarters.filter(report => report.profit != null).map(report => {
+      const quarter = report.quarter.toLowerCase()
+      const number = quarter.includes('first') || /\bq1\b/.test(quarter) ? 1
+        : quarter.includes('second') || /\bq2\b/.test(quarter) ? 2
+          : quarter.includes('third') || /\bq3\b/.test(quarter) ? 3
+            : quarter.includes('fourth') || /\bq4\b/.test(quarter) ? 4 : 0
+      return [number, report.profit!]
+    }))
+    if ([1, 2, 3, 4].every(quarter => quarterResults.has(quarter))) {
+      const profit = [1, 2, 3, 4].reduce((sum, quarter) => sum + quarterResults.get(quarter)!, 0)
+      return { fy: group.fy, fyNepali: group.fyNepali, profit, basis: 'quarters' }
+    }
+  }
+  return null
 }
 /** Recent daily closes for one symbol from monthly LTP shards (single source: yonepse).
  *  Reads the manifest, takes the last `monthsBack` months (~244KB/file), merges
@@ -274,6 +307,7 @@ export async function fetchNepseCompanyFinancials(): Promise<NepseCompanyFinanci
             eps: numOrNull(q.eps),
             paid_up_capital: numOrNull(q.paid_up_capital),
             profit: numOrNull(q.profit),
+            revenue: numOrNull(q.revenue),
             net_worth_per_share: numOrNull(q.net_worth_per_share),
           })),
         })),
@@ -304,13 +338,7 @@ export async function fetchNepseData(): Promise<NepseData> {
 }
 
 export function formatNprAmount(amount: unknown): string {
-  const n = Number(amount)
-  if (amount == null || Number.isNaN(n)) return '-'
-  if (n >= 1e12) return `NPR ${(n / 1e12).toFixed(2)}T`
-  if (n >= 1e9) return `NPR ${(n / 1e9).toFixed(1)}B`
-  if (n >= 1e7) return `NPR ${(n / 1e7).toFixed(0)}Cr`
-  if (n >= 1e5) return `NPR ${(n / 1e5).toFixed(1)}L`
-  return `NPR ${n.toLocaleString()}`
+  return formatNpr(amount)
 }
 
 export function formatNumber(num: unknown): string {

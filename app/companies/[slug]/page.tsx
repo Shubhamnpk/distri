@@ -1,11 +1,15 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, ArrowRight, ExternalLink, TrendingUp, TrendingDown, FileText, Building2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, FileText, Building2 } from 'lucide-react'
 import { companies, slugify, findCompanyBySlug } from '@/lib/data'
 import { StatusBadge } from '@/components/shared'
 import { CompanyLogo } from '@/components/company-logo'
-import { CompanyMarketSections } from '@/components/company-market'
+import { CompanyFinancialYear, CompanyLiveResult, CompanyMarketProvider, CompanyMarketSections } from '@/components/company-market'
 import { RelatedDatasets } from '@/components/related-datasets'
+import { CompanyAccountability } from '@/components/company-accountability'
+import { companyProfiles } from '@/lib/company-profiles'
+import { formatNprOrNA, formatNprText } from '@/lib/currency'
+import { getCompanyCategory } from '@/lib/company-categories'
 
 export function generateStaticParams() {
   return companies.map(c => ({ slug: slugify(c.name) }))
@@ -17,7 +21,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!company) return { title: 'Company not found - Drishti' }
   return {
     title: `${company.name} - Drishti`,
-    description: `${company.sector} · ${company.operatingStatus} · ${company.result} · ${company.note.slice(0, 140)}`,
+    description: `${getCompanyCategory(company)} · ${company.operatingStatus} · ${formatNprText(company.result)} · ${formatNprText(company.note).slice(0, 140)}`,
   }
 }
 
@@ -29,9 +33,10 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
   const idx = companies.findIndex(c => slugify(c.name) === slug)
   const prev = idx > 0 ? companies[idx - 1] : null
   const next = idx < companies.length - 1 ? companies[idx + 1] : null
-  const isProfit = company.resultType === 'up'
+  const companyProfile = companyProfiles[company.name]
 
   return (
+    <CompanyMarketProvider companyName={company.name}>
     <div className="content-wrap">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1rem' }}>
         <Link
@@ -124,15 +129,15 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
             left: 0,
             right: 0,
             height: 4,
-            background: isProfit ? 'var(--primary)' : 'var(--danger)',
+            background: 'var(--border)',
           }}
         />
         <p className="eyebrow" style={{ margin: 0 }}>
-          {company.sector.toUpperCase()} · {company.year}
+          {(company.entityType ?? getCompanyCategory(company)).toUpperCase()} · <CompanyFinancialYear company={company} />
         </p>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap', marginTop: '.35rem' }}>
           <div style={{ flex: '1 1 280px', minWidth: 0, display: 'flex', gap: '.85rem', alignItems: 'flex-start' }}>
-            <CompanyLogo src={company.logo} alt={company.name} size={56} isProfit={isProfit} rounded={12} />
+            <CompanyLogo src={company.logo} alt={company.name} size={56} rounded={12} />
             <div style={{ minWidth: 0, flex: 1 }}>
               <h1
                 className="font-serif"
@@ -148,7 +153,6 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
               </h1>
               <div style={{ display: 'flex', gap: '.4rem', marginTop: '.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
                 <StatusBadge status={company.operatingStatus} />
-                <StatusBadge status={company.coverage} />
                 <span
                   className="text-tertiary bg-sunken rounded-[20px]"
                   style={{
@@ -159,9 +163,14 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
                     padding: '.2rem .5rem',
                   }}
                 >
-                  <Building2 size={12} /> {company.sector}
+                  <Building2 size={12} /> {company.entityType ?? getCompanyCategory(company)}
                 </span>
               </div>
+              {(companyProfile?.ministry || companyProfile?.websiteUrl) && <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.45rem', marginTop: '.55rem', fontSize: '.68rem' }}>
+                {companyProfile.ministry && <span className="text-secondary">Under: {companyProfile.ministry}</span>}
+                {companyProfile.ministryUrl && <a href={companyProfile.ministryUrl} target="_blank" rel="noreferrer" className="text-primary" aria-label={`Visit ${companyProfile.ministry}`}><ExternalLink size={12} /></a>}
+                {companyProfile.websiteUrl && <a href={companyProfile.websiteUrl} target="_blank" rel="noreferrer" className="text-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '.2rem', fontWeight: 700 }}>Official website <ExternalLink size={12} /></a>}
+              </div>}
             </div>
           </div>
 
@@ -170,43 +179,14 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
             className="rounded-lg"
             style={{
               flexShrink: 0,
-              background: isProfit ? 'var(--primary-50)' : 'var(--danger-light)',
-              border: `1px solid ${isProfit ? 'rgba(13,124,95,.14)' : 'rgba(196,55,58,.14)'}`,
+              background: 'var(--bg-sunken)',
+              border: '1px solid var(--border-light)',
               padding: '1rem 1.25rem',
               minWidth: 220,
               textAlign: 'left',
             }}
           >
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '.3rem',
-                fontSize: '.62rem',
-                fontWeight: 700,
-                letterSpacing: '.1em',
-                textTransform: 'uppercase',
-                color: isProfit ? 'var(--primary)' : 'var(--danger)',
-              }}
-            >
-              {isProfit ? <TrendingUp size={13} /> : <TrendingDown size={13} />} Net result · {company.year}
-            </span>
-            <strong
-              style={{
-                display: 'block',
-                marginTop: '.35rem',
-                fontSize: '1.65rem',
-                fontWeight: 800,
-                letterSpacing: '-.03em',
-                lineHeight: 1,
-                color: isProfit ? 'var(--primary)' : 'var(--danger)',
-              }}
-            >
-              {company.result}
-            </strong>
-            <span style={{ display: 'block', marginTop: '.35rem', fontSize: '.66rem', color: isProfit ? 'var(--primary)' : 'var(--danger)', opacity: .8 }}>
-              {isProfit ? 'Profitable' : company.operatingStatus === 'Closed' || company.operatingStatus === 'Not yet operational' ? 'No operations' : 'Loss-making'}
-            </span>
+            <CompanyLiveResult company={company} />
           </div>
         </div>
 
@@ -221,7 +201,7 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
         >
           <div className="bg-sunken rounded-[10px]" style={{ padding: '.85rem .95rem' }}>
             <span className="text-tertiary" style={{ fontSize: '.6rem', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }}>Revenue</span>
-            <strong style={{ display: 'block', fontSize: '1.05rem', marginTop: '.15rem', letterSpacing: '-.02em' }}>{company.revenue}</strong>
+            <strong style={{ display: 'block', fontSize: '1.05rem', marginTop: '.15rem', letterSpacing: '-.02em' }}>{formatNprOrNA(company.revenue)}</strong>
             <span className="text-secondary" style={{ fontSize: '.64rem' }}>{company.year}</span>
           </div>
           <div className="bg-sunken rounded-[10px]" style={{ padding: '.85rem .95rem' }}>
@@ -229,6 +209,11 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
             <strong style={{ display: 'block', fontSize: '1.05rem', marginTop: '.15rem' }}>{company.year}</strong>
             <span className="text-secondary" style={{ fontSize: '.64rem' }}>{company.operatingStatus}</span>
           </div>
+          {company.ownership && <div className="bg-sunken rounded-[10px]" style={{ padding: '.85rem .95rem' }}>
+            <span className="text-tertiary" style={{ fontSize: '.6rem', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }}>{company.entityType ? 'Public status' : 'Government ownership'}</span>
+            <strong style={{ display: 'block', fontSize: '1.05rem', marginTop: '.15rem' }}>{company.ownership}</strong>
+            <span className="text-secondary" style={{ fontSize: '.64rem' }}>{company.entityType ? 'Not a share-based ownership structure' : 'As stated in the attached ownership record'}</span>
+          </div>}
         </div>
       </section>
 
@@ -253,7 +238,7 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
               <div>
                 <strong style={{ display: 'block', fontSize: '.82rem' }}>Source evidence</strong>
                 <p className="text-secondary" style={{ margin: '.25rem 0 0', fontSize: '.72rem', lineHeight: 1.55 }}>
-                  {company.note}
+                  {formatNprText(company.note)}
                 </p>
                 <p className="text-secondary" style={{ margin: '.6rem 0 0', fontSize: '.7rem' }}>
                   Reported by <strong className="text-ink">{company.source}</strong>
@@ -282,9 +267,11 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
             </div>
           </div>
 
-          <RelatedDatasets query={company.sector} title={`Open data: ${company.sector}`} />
+          <RelatedDatasets query={company.sector} title={`Open data: ${getCompanyCategory(company)}`} />
         </aside>
       </div>
+
+      <CompanyAccountability company={company} />
 
       <style>{`@media (max-width: 900px) {
   .detail-grid { grid-template-columns: 1fr !important; }
@@ -308,5 +295,6 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
         )}
       </div>
     </div>
+    </CompanyMarketProvider>
   )
 }

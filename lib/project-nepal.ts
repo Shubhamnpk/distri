@@ -1,3 +1,4 @@
+import { formatNpr } from '@/lib/currency'
 import type { ProjectNepalProvince, ProjectNepalDistrict, ProjectNepalProject, ProjectNepalBudget } from './types'
 
 const BASE_URL = 'https://raw.githubusercontent.com/EverestValley/project-nepal/main/data'
@@ -128,9 +129,5 @@ export function calculateProgress(status: 'Reported' | 'In Progress' | 'Delayed'
 
 // Format budget in NPR
 export function formatBudget(amount: number): string {
-  if (amount >= 1e12) return `NPR ${(amount / 1e12).toFixed(2)}T`
-  if (amount >= 1e9) return `NPR ${(amount / 1e9).toFixed(1)}B`
-  if (amount >= 1e7) return `NPR ${(amount / 1e7).toFixed(0)}Cr`
-  if (amount >= 1e5) return `NPR ${(amount / 1e5).toFixed(1)}L`
-  return `NPR ${amount.toLocaleString()}`
+  return formatNpr(amount)
 }

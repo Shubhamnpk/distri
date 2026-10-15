@@ -157,7 +157,7 @@ export default function EconomyPage() {
               <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(2.2rem, 4vw, 3.2rem)', fontWeight: 500, letterSpacing: '-.04em', margin: '.3rem 0 .4rem', lineHeight: 1.02 }}>
                 {formatUsd(gdpL?.value ?? 0)}
               </h1>
-              <p style={{ fontSize: '.8rem', opacity: .85, margin: 0 }}>Gross Domestic Product · {gdpL?.year} estimate · रू{((gdpL?.value ?? 0) * (liveNrb ?? liveNprRate) / 1e12).toFixed(2)}T at {liveNrb ? 'today’s NRB rate' : 'official rate'}</p>
+              <p style={{ fontSize: '.8rem', opacity: .85, margin: 0 }}>Gross Domestic Product · {gdpL?.year} estimate · रु {((gdpL?.value ?? 0) * (liveNrb ?? liveNprRate) / 1e12).toFixed(2)}T at {liveNrb ? 'today’s NRB rate' : 'official rate'}</p>
               <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1.1rem', flexWrap: 'wrap' }}>
                 {[
                   { label: 'Growth', val: `${(gdpGrL?.value ?? 0).toFixed(1)}%` },
@@ -173,7 +173,7 @@ export default function EconomyPage() {
               </div>
               {liveNrb && (
                 <div style={{ display: 'inline-block', marginTop: '1rem', background: 'rgba(255,255,255,.14)', borderRadius: 20, padding: '.35rem .8rem', fontSize: '.7rem', fontWeight: 700 }}>
-                  Live NRB fixing today: रू{liveNrb.toFixed(2)} / $
+                  Live NRB fixing today: रु {liveNrb.toFixed(2)} / $
                 </div>
               )}
             </div>
@@ -260,19 +260,19 @@ export default function EconomyPage() {
                 </div>
               </div>
               <div>
-                <p className="eyebrow" style={{ margin: '0 0 .3rem', fontSize: '.55rem' }}>NPR PER US DOLLAR</p>
+                <p className="eyebrow" style={{ margin: '0 0 .3rem', fontSize: '.55rem' }}>रु PER US DOLLAR</p>
                 {data.exchangeRate.length ? (
                   <>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: '.4rem' }}>
-                      <strong style={{ fontSize: '1.3rem', letterSpacing: '-.03em' }}>रू{(latest(data.exchangeRate)?.value ?? 0).toFixed(2)}</strong>
+                      <strong style={{ fontSize: '1.3rem', letterSpacing: '-.03em' }}>रु {(latest(data.exchangeRate)?.value ?? 0).toFixed(2)}</strong>
                       <span style={{ fontSize: '.6rem', color: 'var(--text-tertiary)' }}>$1 · {latest(data.exchangeRate)?.year}</span>
                     </div>
                     <div style={{ marginTop: '.4rem' }}>
-                      <LineChart data={data.exchangeRate} color="#e0a351" height={110} formatValue={v => `रू${v.toFixed(2)}`} title="Exchange rate trend" />
+                      <LineChart data={data.exchangeRate} color="#e0a351" height={110} formatValue={v => `रु ${v.toFixed(2)}`} title="Exchange rate trend" />
                     </div>
                     {liveNrb && (
                       <div style={{ marginTop: '.4rem', padding: '.5rem .65rem', background: 'var(--primary-50)', borderRadius: 8, fontSize: '.68rem', fontWeight: 700, color: 'var(--primary)' }}>
-                        Live NRB fixing today: रू{liveNrb.toFixed(2)}
+                        Live NRB fixing today: रु {liveNrb.toFixed(2)}
                       </div>
                     )}
                   </>

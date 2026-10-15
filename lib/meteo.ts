@@ -87,6 +87,24 @@ export async function fetchDailyHighLow(place: DistrictWeather): Promise<{ date:
     return []
   }
 }
+/** 24h temperature curve for station sparklines. */
+export async function fetchHourlyTemps(place: DistrictWeather): Promise<{ time: string; value: number }[]> {
+  try {
+    const res = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}&hourly=temperature_2m&forecast_days=1&timezone=Asia%2FKathmandu`,
+      { headers: HEADERS, next: { revalidate: 3600 } },
+    )
+    if (!res.ok) return []
+    const json = await res.json()
+    const times: string[] = json?.hourly?.time ?? []
+    const vals: (number | null)[] = json?.hourly?.temperature_2m ?? []
+    return times
+      .map((t, i) => ({ time: String(t).slice(11, 16), value: typeof vals[i] === 'number' ? (vals[i] as number) : NaN }))
+      .filter(d => !Number.isNaN(d.value))
+  } catch {
+    return []
+  }
+}
 export async function fetchCurrentPm25(place: DistrictWeather = NEPAL_DISTRICT_CENTERS.Kathmandu): Promise<number | null> {
   try {
     const res = await fetch(

@@ -7,11 +7,11 @@ import dynamic from 'next/dynamic'
 import { StatusBadge } from '@/components/shared'
 import { DetailDrawer } from '@/components/detail-drawer'
 import { DistrictDrilldown } from '@/components/district-drilldown'
-import { CommunityOverview } from '@/components/community-panel'
 import { HydroAtlas } from '@/components/hydro-atlas'
-import { projects, slugify, parseBudgetCr, utilizationPct, PROVINCES } from '@/lib/data'
+import { projects, slugify, parseBudgetCr, utilizationPct, PROVINCES, PROJECT_FX_NOTE, PROJECT_FX_SOURCE } from '@/lib/data'
 import { matchDistricts } from '@/lib/geo'
 import { fetchWbProjectCount } from '@/lib/api'
+import { formatNprText } from '@/lib/currency'
 
 const NepalMapReal = dynamic(() => import('@/components/nepal-map-real').then(m => m.NepalMapReal), {
   ssr: false,
@@ -20,14 +20,8 @@ const NepalMapReal = dynamic(() => import('@/components/nepal-map-real').then(m 
 import type { Project } from '@/lib/types'
 
 const STATUS_FILTERS = ['All', 'Completed', 'On track', 'At risk', 'Delayed'] as const
-const CATEGORY_FILTERS = ['All', 'Hydropower', 'Highway', 'Airport', 'Irrigation', 'Water', 'Heritage', 'Sports', 'Rail', 'Conservation'] as const
+const CATEGORY_FILTERS = ['All', 'Hydropower', 'Power', 'Highway', 'Airport', 'Irrigation', 'Water', 'Heritage', 'Sports', 'Rail', 'Conservation'] as const
 const SORTS = ['Newest', 'Budget ↓', 'Budget ↑', 'Progress ↓', 'Progress ↑', 'Name A-Z'] as const
-
-function statusColor(status: Project['status']): string {
-  if (status === 'On track' || status === 'Completed') return 'var(--primary)'
-  if (status === 'At risk') return 'var(--warning)'
-  return 'var(--danger)'
-}
 
 export default function ProjectsPage() {
   const [query, setQuery] = useState('')
@@ -109,6 +103,10 @@ export default function ProjectsPage() {
           Highways, hydropower, airports and irrigation — physical progress, budgets and evidence for every flagship build.
           {wbCount ? ` Plus ${wbCount} World Bank–financed projects in the portfolio.` : ''}
         </p>
+        <p style={{ fontSize: '.68rem', opacity: .72, margin: '.45rem 0 0', maxWidth: 650, lineHeight: 1.5 }}>
+          National Pride project figures use the NPC cumulative progress report through FY 2082/83. Other major projects are tracked separately and may use different reporting dates.
+        </p>
+        <p style={{ fontSize: '.64rem', opacity: .72, margin: '.3rem 0 0', maxWidth: 650, lineHeight: 1.5 }}>{PROJECT_FX_NOTE} <a href={PROJECT_FX_SOURCE} target="_blank" rel="noreferrer" style={{ textDecoration: 'underline' }}>Rate source</a></p>
         <div style={{ display: 'flex', height: 10, borderRadius: 99, overflow: 'hidden', marginTop: '1.1rem', background: 'rgba(255,255,255,.16)' }}>
           {[
             { count: counts.completed, color: '#4ade80' },
@@ -276,7 +274,7 @@ export default function ProjectsPage() {
                   className="project-card"
                   style={{ display: 'block', textDecoration: 'none', height: '100%' }}
                 >
-                  <img src={p.image} alt="" />
+                  <img src={p.image} alt={p.name} />
                   <div className="project-top">
                     <span
                       className="rounded-[20px] bg-sunken text-secondary border border-line-light"
@@ -318,21 +316,13 @@ export default function ProjectsPage() {
                       <span>Physical progress</span>
                       <strong>{p.progress}%</strong>
                     </div>
-                    <div className="progress-track">
-                      <span style={{ width: `${p.progress}%`, background: statusColor(p.status) }} />
-                    </div>
                   </div>
                   <div className="project-meta">
                     <span>
-                      Budget <strong>{p.budget}</strong>
-                      {parseBudgetCr(p.budget) != null && (
-                        <span className="bg-sunken border border-line-light rounded-[20px] text-tertiary" style={{ marginLeft: '.3rem', fontSize: '.62rem', padding: '.12rem .35rem' }}>
-                          {parseBudgetCr(p.budget)!.toLocaleString()} Cr
-                        </span>
-                      )}
+                      Budget <strong>{formatNprText(p.budget)}</strong>
                     </span>
                     <span>
-                      Spent <strong>{p.spent}</strong>
+                      Spent <strong>{formatNprText(p.spent)}</strong>
                       {utilizationPct(p.spent, p.budget) != null && (
                         <span
                           className="rounded-[20px]"
@@ -358,9 +348,9 @@ export default function ProjectsPage() {
                       Updated <strong>{p.updated}</strong>
                     </span>
                   </div>
-                  {p.gallery && p.gallery.length > 0 && (
+                  {Array.from(new Set([p.image, ...(p.gallery ?? [])])).length > 1 && (
                     <div className="rounded-[6px]" style={{ display: 'flex', gap: 4, marginTop: '.6rem', overflow: 'hidden' }}>
-                      {p.gallery.slice(0, 3).map(src => (
+                      {Array.from(new Set([p.image, ...(p.gallery ?? [])])).slice(1, 4).map(src => (
                         <img key={src} src={src} alt="" className="rounded-[4px] border border-line-light" style={{ width: 56, height: 40, objectFit: 'cover', flexShrink: 0 }} loading="lazy" />
                       ))}
                     </div>
@@ -397,8 +387,6 @@ export default function ProjectsPage() {
           </div>
         )}
       </section>
-
-      <CommunityOverview />
       <HydroAtlas />
 
       {selected && (

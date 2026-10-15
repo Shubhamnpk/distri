@@ -26,7 +26,7 @@ Next.js 16.3.3 App Router + Turbopack, React 19, TypeScript 5.7 strict (`noEmit`
 - `app/layout.tsx` — root layout: `Inter`, `ThemeProvider` (`data-theme` + `localStorage`), `Header`/`Footer`, `app-shell` wrapper
 - `app/{page.tsx,globals.css,companies/,projects/,datasets/,economy/,environment/,sources/}` — App Router routes; add route via `app/<name>/page.tsx` (`/environment` = live DHM/BIPAD/USGS/Open-Meteo feeds)
 - `components/` — `header.tsx` (nav + `next/link`, mobile toggle), `footer.tsx`, `theme-provider.tsx`, `charts.tsx` (SVG `BarChart`/`LineChart`), `detail-drawer.tsx`, `shared.tsx`, `logo.tsx`, `ui/button.tsx`
-- `lib/` — `api.ts` (WB + IMF), `data.ts` (hardcoded `companies`/`projects`/`sources`), `types.ts`, `utils.ts` (`cn` via `clsx`+`tailwind-merge`), `nepse.ts`, `opendatanepal.ts`, `project-nepal.ts`, `api-helpers.ts`
+- `lib/` — `api.ts` (WB + IMF), `data.ts` (companies/projects/sources), `types.ts`, `utils.ts` (`cn` via `clsx`+`tailwind-merge`), `nepse.ts`, `opendatanepal.ts`, `project-nepal.ts`, `api-helpers.ts`
 - `pnpm-workspace.yaml` — `minimumReleaseAgeExclude: ['@next/*','next']`
 
 ## Config quirks (verify before changing)

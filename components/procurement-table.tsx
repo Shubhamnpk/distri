@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { Search, FileText, Building2, CalendarDays } from 'lucide-react'
+import { formatNpr } from '@/lib/currency'
 import type { OcdsTender } from '@/lib/ocds'
 
 const PAGE_SIZE = 60
@@ -74,7 +75,7 @@ export function ProcurementTable({ tenders }: { tenders: OcdsTender[] }) {
                 </div>
                 <div>
                   <small>Estimate</small>
-                  <strong>{t.amount != null ? `NPR ${t.amount.toLocaleString()}` : 'Not disclosed'}</strong>
+                  <strong>{t.amount != null ? formatNpr(t.amount) : 'Not disclosed'}</strong>
                 </div>
                 <div>
                   <small>Bid window</small>

@@ -2,7 +2,7 @@
 // Verified live 2026-10-14 against yonepse nepse_data.json (368 rows) +
 // ShareSansar 523-symbol universe + ShareSansar/merolagani company pages.
 //
-// Listed with live mirror data (3): NTC, CIT, STC.
+// Exact symbols connected to the company's market section (5): NTC, CIT, STC, ADBL, NBL.
 // Deliberately unmapped:
 // - RBB trades as RBBL (ShareSansar/merolagani confirm) but is SUSPENDED —
 //   merolagani shows LTP 0.00 / never traded, and it is absent from BOTH daily
@@ -11,12 +11,14 @@
 // - NEA, NOC, NAC, NTV, NWSC, DDC, CAAN, DCGF: unlisted (no symbol anywhere).
 // - Udayapur/Hetauda cement, Nepal Metals, Butwal Spinning, Orind/Magnesite:
 //   closed and unlisted. Dhaubadi Iron: pre-operational.
-// - NBL/ADBL are listed but are NOT our companies (similar names, exact-only rule).
+// - These mappings are exact company-name matches; no fuzzy matching is used.
 
 export const COMPANY_SYMBOLS: Record<string, string> = {
   'Nepal Telecom': 'NTC',
   'Citizen Investment Trust': 'CIT',
   'Salt Trading Corporation': 'STC',
+  'Agricultural Development Bank': 'ADBL',
+  'Nepal Bank Limited': 'NBL',
 }
 
 /** Exact symbol for a tracked company name, or null when it has none. */

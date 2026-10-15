@@ -1,6 +1,8 @@
 'use client'
 
 import { Building2, Check, ExternalLink, FileText, X } from 'lucide-react'
+import { formatNprOrNA, formatNprText } from '@/lib/currency'
+import { formatFiscalYearLabel } from '@/lib/fiscal-year'
 import { StatusBadge } from './shared'
 import { CompanyLogo } from './company-logo'
 import type { Company, Project } from '@/lib/types'
@@ -30,10 +32,11 @@ export function DetailDrawer({ selected, quarter, onQuarterChange, onClose }: De
                 <p className="drawer-subtitle" style={{ margin: 0 }}>{selected.sector}</p>
               </div>
             </div>
-            <div className="drawer-stat"><span>Latest reporting year</span><strong>{selected.year}</strong></div>
-            <div className="drawer-stat"><span>Reported revenue</span><strong>{selected.revenue}</strong></div>
-            <div className="drawer-stat"><span>Net result</span><strong className={selected.resultType === 'up' ? 'positive' : 'negative'}>{selected.result}</strong></div>
-            <StatusBadge status={selected.coverage} />
+            <div className="drawer-stat"><span>Latest reporting year</span><strong>{formatFiscalYearLabel(selected.year)}</strong></div>
+            <div className="drawer-stat"><span>Reported revenue</span><strong>{formatNprOrNA(selected.revenue)}</strong></div>
+            {selected.ownership && <div className="drawer-stat"><span>Government ownership</span><strong>{selected.ownership}</strong></div>}
+            <div className="drawer-stat"><span>Net result</span><strong className={selected.resultType === 'unknown' ? 'text-secondary' : selected.resultType === 'up' ? 'positive' : 'negative'}>{formatNprOrNA(selected.result)}</strong></div>
+            <StatusBadge status={selected.operatingStatus} />
             <div className="quarter-tabs">
               {selected.quarters.map(item => (
                 <button className={quarter === item.label ? 'selected' : ''} key={item.label} onClick={() => onQuarterChange(item.label)}>{item.label}</button>
@@ -41,8 +44,8 @@ export function DetailDrawer({ selected, quarter, onQuarterChange, onClose }: De
             </div>
             {selected.quarters.filter(item => item.label === quarter).map(item => (
               <div className="quarter-card" key={item.label}>
-                <div><span>{item.label} revenue</span><strong>{item.revenue}</strong></div>
-                <div><span>Net result</span><strong>{item.result}</strong></div>
+                <div><span>{item.label} revenue</span><strong>{formatNprOrNA(item.revenue)}</strong></div>
+                <div><span>Net result</span><strong>{formatNprOrNA(item.result)}</strong></div>
                 <StatusBadge status={item.state} />
               </div>
             ))}
@@ -50,19 +53,28 @@ export function DetailDrawer({ selected, quarter, onQuarterChange, onClose }: De
               <FileText size={17} />
               <div>
                 <strong>Evidence attached</strong>
-                <p>{selected.note}</p>
+                <p>{formatNprText(selected.note)}</p>
                 <a href={selected.sourceUrl} target="_blank" rel="noreferrer">View official source <ExternalLink size={14} /></a>
               </div>
             </div>
           </>
         ) : (
           <>
-            <div className="drawer-visual"><img src={selected.image} alt="Nepal infrastructure context" /></div>
+            <div className="drawer-visual"><img src={selected.image} alt={selected.name} /></div>
+            {Array.from(new Set([selected.image, ...(selected.gallery ?? [])])).length > 1 && (
+              <div style={{ display: 'flex', gap: 5, overflowX: 'auto', marginTop: '-.5rem' }}>
+                {Array.from(new Set([selected.image, ...(selected.gallery ?? [])])).slice(1).map(src => (
+                  <a key={src} href={src} target="_blank" rel="noreferrer" aria-label={`Open additional photo for ${selected.name}`}>
+                    <img src={src} alt="" className="rounded-[6px] border border-line-light" style={{ width: 74, height: 50, objectFit: 'cover', display: 'block' }} loading="lazy" />
+                  </a>
+                ))}
+              </div>
+            )}
             <p className="eyebrow">PROJECT PROFILE</p>
             <h2>{selected.name}</h2>
             <p className="drawer-subtitle">{selected.ministry} · {selected.location}</p>
-            <div className="drawer-stat"><span>Approved budget</span><strong>{selected.budget}</strong></div>
-            <div className="drawer-stat"><span>Reported spending</span><strong>{selected.spent}</strong></div>
+            <div className="drawer-stat"><span>Approved budget</span><strong>{formatNprText(selected.budget)}</strong></div>
+            <div className="drawer-stat"><span>Reported spending</span><strong>{formatNprText(selected.spent)}</strong></div>
             <div className="drawer-stat"><span>Physical progress</span><strong>{selected.progress}%</strong></div>
             <div className="drawer-stat"><span>Latest update</span><strong>{selected.updated}</strong></div>
             <StatusBadge status={selected.status} />

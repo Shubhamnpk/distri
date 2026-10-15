@@ -3,15 +3,13 @@ import { ArrowUpRight } from 'lucide-react'
 export function StatusBadge({ status }: { status: string }) {
   const cls =
     status === 'On track' ||
-    status === 'Verified' ||
     status === 'Done' ||
     status === 'Completed' ||
     status === 'Operating'
       ? 'status-good'
       : status === 'At risk' ||
-          status === 'Partial' ||
           status === 'Active' ||
-          status === 'Not yet operational'
+            status === 'Closed'
         ? 'status-warn'
         : 'status-bad'
 

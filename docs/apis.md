@@ -122,7 +122,8 @@ Conventions across all clients (`lib/*.ts`):
 
 - Base: `https://dhm.gov.np/mfd/api`. Auth: none. Revalidate 3600. Verified live (payloads stamped same-day).
 - Used: `/weather` (20 cities, 2-day manual+model forecast, EN/NE), `/manual-observation` (today's observed min/max + rainfall), `/country-forecast` (bulletin).
-- Verified 2026-10-14: numeric per-city forecast is days 1–2 ONLY — match rows by the `day` field, not array index. `/three-days-forecast-latest` returns Nepali titles + `forecast-images/…/day_N_….png` paths that 404 at every predictable base (`/mfd/`, `/`) — do not embed; day-3 exists only as unreachable map images.
+- Verified 2026-10-15: numeric per-city forecast is days 1–2 ONLY — match rows by the `day` field, not array index. `/three-days-forecast-latest` returns Nepali titles + `forecast-images/…/day_N_….png` paths that 404 at every predictable base (`/mfd/`, `/`) — do not embed; day-3 exists only as unreachable map images.
+- Day semantics (verified): `day` counts from the payload issue datetime (`date = issue + (day−1)`); numbering shifts between the 2×-daily issues, so NEVER hardcode day 1 = today — label from `forecastDayLabel(day, issueIso)`. `model_forecast` mirrors the same days with all-null values (useless — ignore). Stations also carry `sunrise`/`sunset` ("5:58:16 AM" NPT) + `datetime` — used for precise day/night (`isDayBySun`).
 - Shown: /environment outlook grid (first 8 stations with forecasts; rain badge > 40%).
 - Shown: /environment outlook grid (first 8 stations with forecasts; rain badge > 40%).
 - Dead end: `hydrology.gov.np` realtime is socket.io SPA with no REST — use BIPAD station mirrors instead.

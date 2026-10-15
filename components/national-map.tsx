@@ -2,13 +2,21 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { MapContainer, TileLayer, GeoJSON, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet'
+import { Waves, CalendarDays, MapPin } from 'lucide-react'
+import { MapContainer, TileLayer, GeoJSON, CircleMarker, Marker, Popup, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { projects, slugify } from '@/lib/data'
+import { forecastDayLabel, isNptDay, isDayBySun, shortClock } from '@/lib/time'
+import { formatNprText } from '@/lib/currency'
 import { matchDistricts } from '@/lib/geo'
 import { fetchBipadDistricts, fetchDistrictPolygons, fetchLocalDistricts, districtsFromPolygons, provinceBbox, normName, type BipadDistrict, type LocalDistrict } from '@/lib/district-geo'
 import { fetchNaxaHydroProjects, type NaxaHydroProject } from '@/lib/naxa'
-import { fetchNepalQuakes, type NepalQuake } from '@/lib/meteo'
+import { fetchNepalQuakes, fetchCurrentWeather, fetchCurrentPm25, fetchHourlyTemps, type NepalQuake, type CurrentWeather } from '@/lib/meteo'
+import { LineChart } from '@/components/charts'
+import { WeatherIcon } from '@/components/weather-icon'
+import { skyKind } from '@/lib/condition'
+import { skyMarkerSvg, hydroPinSvg, quakePinSvg } from '@/lib/sky-svg'
+import L from 'leaflet'
 import { fetchDhmForecast } from '@/lib/dhm'
 import { fetchBipadIncidents } from '@/lib/bipad'
 import type { BipadIncident } from '@/lib/bipad'
@@ -31,6 +39,19 @@ const STATUS_COLOR: Record<string, string> = {
   Delayed: '#dc2626',
 }
 
+// Nepali year 2083 BS ≈ 13 Apr 2026 – 14 Apr 2027 AD. Incident feed is scoped here.
+const BS2083_START = Date.parse('2026-04-13T00:00:00+05:45')
+const BS2083_END = Date.parse('2027-04-14T00:00:00+05:45')
+
+function incidentDate(i: BipadIncident): number {
+  const r = i as unknown as Record<string, unknown>
+  for (const k of ['incidentOn', 'reportedOn', 'createdOn']) {
+    const t = Date.parse(String(r[k] ?? ''))
+    if (!Number.isNaN(t)) return t
+  }
+  return NaN
+}
+
 // Name variants between BIPAD and DataNepal spellings (mirrors lib/geo SPELL_FIX).
 const NAME_ALIAS: Record<string, string> = {
   chitawan: 'chitwan',
@@ -51,28 +72,17 @@ function hash01(s: string): number {
 
 const NEPAL_BBOX: [[number, number], [number, number]] = [[26.2, 80.2], [30.4, 88.3]]
 
-type Layers = { projects: boolean; hydro: boolean; quakes: boolean; weather: boolean; incidents: boolean }
+type Layers = { projects: boolean; hydro: boolean; quakes: boolean; quakesPast: boolean; weather: boolean; incidents: boolean }
 
 function FitHelper({ bbox }: { bbox: [[number, number], [number, number]] | null }) {
   const map = useMap()
   const first = useRef(true)
   useEffect(() => {
     if (!bbox) return
-    // Suspend the fence mid-flight — maxBoundsViscosity otherwise drags the
-    // animation sideways and the view lands off-target, then snaps again.
-    const prev = map.options.maxBounds
-    map.setMaxBounds(undefined as never)
+    // No maxBounds on the map (free pan/zoom by design), so flights land
+    // exactly — nothing left to drag the view back toward center.
     map.flyToBounds(bbox, { padding: [60, 60], duration: first.current ? 0.1 : 1.2 })
     first.current = false
-    const restore = () => {
-      map.setMaxBounds(prev as never)
-      map.off('moveend', restore as never)
-    }
-    map.on('moveend', restore as never)
-    return () => {
-      map.off('moveend', restore as never)
-      map.setMaxBounds(prev as never)
-    }
   }, [map, bbox])
   return null
 }
@@ -130,7 +140,16 @@ function makeDistrictEach(setDistrict: (fn: (cur: string | null) => string | nul
   }
 }
 
-type DhmStation = { id: number; name: string; latitude: number; longitude: number; condition?: string }
+type DhmStation = {
+  id: number
+  name: string
+  latitude: number
+  longitude: number
+  condition?: string
+  sunrise?: string
+  sunset?: string
+  days: { day: number; from_temperature: number | null; to_temperature: number | null; rain_probability: number; weather?: { name: string } }[]
+}
 
 export function NationalMap() {
   const [provinceGeo, setProvinceGeo] = useState<Record<string, unknown> | null>(null)
@@ -143,12 +162,19 @@ export function NationalMap() {
   const [incidents, setIncidents] = useState<BipadIncident[]>([])
   const [province, setProvince] = useState<string | null>(null)
   const [district, setDistrict] = useState<string | null>(null)
+  const [stationSel, setStationSel] = useState<DhmStation | null>(null)
+  const [hydroSel, setHydroSel] = useState<NaxaHydroProject | null>(null)
+  const [stationWx, setStationWx] = useState<CurrentWeather | null>(null)
+  const [stationPm, setStationPm] = useState<number | null>(null)
+  const [stationHourly, setStationHourly] = useState<{ time: string; value: number }[]>([])
+  const [stationLoading, setStationLoading] = useState(false)
   const [districtsReady, setDistrictsReady] = useState(false)
   const [districtsLive, setDistrictsLive] = useState(false)
   const liveRef = useRef(false)
   const [localLoading, setLocalLoading] = useState(false)
   const [polyCount, setPolyCount] = useState<number | null>(null)
-  const [layers, setLayers] = useState<Layers>({ projects: true, hydro: true, quakes: true, weather: false, incidents: false })
+  const [layers, setLayers] = useState<Layers>({ projects: true, hydro: true, quakes: true, quakesPast: false, weather: false, incidents: false })
+  const [quakeSel, setQuakeSel] = useState<NepalQuake | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -173,15 +199,20 @@ export function NationalMap() {
       .then(p => { if (!cancelled) { setPolyByName(p.byName); setPolyCount(p.geojson.features.length) } })
       .catch(() => { if (!cancelled) setPolyCount(0) })
     fetchNaxaHydroProjects().then(h => { if (!cancelled) setHydro(h) }).catch(() => {})
-    fetchNepalQuakes(25).then(q => { if (!cancelled) setQuakes(q) }).catch(() => {})
+    fetchNepalQuakes(100).then(q => { if (!cancelled) setQuakes(q) }).catch(() => {})
     fetchDhmForecast().then(f => {
       if (cancelled) return
       setStations((f?.stations ?? []).map(s => ({
         id: s.id, name: s.name, latitude: s.latitude, longitude: s.longitude,
         condition: s.manual_forecast?.[0]?.weather?.name ?? undefined,
+        sunrise: s.sunrise, sunset: s.sunset,
+        days: (s.manual_forecast ?? []).map(d => ({
+          day: d.day, from_temperature: d.from_temperature ?? null, to_temperature: d.to_temperature ?? null,
+          rain_probability: d.rain_probability ?? 0, weather: d.weather ? { name: d.weather.name } : undefined,
+        })),
       })))
     }).catch(() => {})
-    fetchBipadIncidents(30).then(i => { if (!cancelled) setIncidents(i.results) }).catch(() => {})
+    fetchBipadIncidents(200).then(i => { if (!cancelled) setIncidents(i.results) }).catch(() => {})
     return () => { cancelled = true }
   }, [])
 
@@ -262,11 +293,12 @@ export function NationalMap() {
       const hits = matchDistricts(`${p.name} ${p.location}`)
       const d = hits.map(h => byNorm.get(normName(h))).find(Boolean)
       const fallback = provCentroid.get(p.province ?? '')
+      // Granularity chain: matched district → province centroid → unpinned (national).
       const base = d ?? fallback
-      if (!base || p.province === 'National') return { p, district: d?.name ?? null, lat: null as number | null, lon: null as number | null }
+      if (!base || p.province === 'National') return { p, district: d?.name ?? null, provinceLevel: false, lat: null as number | null, lon: null as number | null }
       const j = hash01(p.name)
       const j2 = hash01(p.location + p.name)
-      return { p, district: d?.name ?? null, lat: base.lat + (j - 0.5) * 0.22, lon: base.lon + (j2 - 0.5) * 0.22 }
+      return { p, district: d?.name ?? null, provinceLevel: !d, lat: base.lat + (j - 0.5) * 0.22, lon: base.lon + (j2 - 0.5) * 0.22 }
     })
   }, [districts])
 
@@ -288,8 +320,35 @@ export function NationalMap() {
   const nationalProjects = projectPoints.filter(x => x.lat == null)
   const visibleHydro = hydro.filter(h => inScope(h.lat, h.lng))
   const visibleQuakes = quakes.filter(q => inScope(q.coordinates[1], q.coordinates[0]))
+  const yearQuakes = visibleQuakes.filter(q => q.time >= BS2083_START && q.time < BS2083_END)
+  const pastQuakes = visibleQuakes.filter(q => !(q.time >= BS2083_START && q.time < BS2083_END))
   const visibleStations = stations.filter(s => inScope(s.latitude, s.longitude))
-  const visibleIncidents = incidents.filter(i => i.point && inScope(i.point.coordinates[1], i.point.coordinates[0]))
+  const visibleIncidents = incidents.filter(i => {
+    if (!i.point || !inScope(i.point.coordinates[1], i.point.coordinates[0])) return false
+    const t = incidentDate(i)
+    return !Number.isNaN(t) && t >= BS2083_START && t < BS2083_END
+  })
+
+  // Station drawer data — current + PM2.5 + 24h curve for the tapped station.
+  useEffect(() => {
+    if (!stationSel) return
+    let cancelled = false
+    setStationLoading(true)
+    setStationWx(null)
+    setStationPm(null)
+    setStationHourly([])
+    const at = { lat: stationSel.latitude, lon: stationSel.longitude }
+    Promise.all([fetchCurrentWeather(at), fetchCurrentPm25(at), fetchHourlyTemps(at)])
+      .then(([w, pm, h]) => {
+        if (cancelled) return
+        setStationWx(w)
+        setStationPm(pm)
+        setStationHourly(h)
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setStationLoading(false) })
+    return () => { cancelled = true }
+  }, [stationSel])
 
   const selectProvince = (p: string | null) => {
     setProvince(p)
@@ -299,7 +358,8 @@ export function NationalMap() {
   const counts = {
     projects: visibleProjects.length,
     hydro: visibleHydro.length,
-    quakes: visibleQuakes.length,
+    quakes: yearQuakes.length,
+    quakesPast: pastQuakes.length,
     weather: visibleStations.length,
     incidents: visibleIncidents.length,
   }
@@ -313,13 +373,14 @@ export function NationalMap() {
           center={[28.4, 84.2] as [number, number]}
           zoom={7}
           minZoom={5}
-          maxBounds={[[24.5, 78.0] as [number, number], [32.0, 90.5] as [number, number]]}
-          maxBoundsViscosity={0.3}
+          maxZoom={12}
+          worldCopyJump={true}
           style={{ height: '100%', width: '100%', background: '#eef2f0' }}
+          className={isNptDay() ? undefined : 'night-tiles'}
           attributionControl={true}
-        ><TileLayer
-            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>'
+        >          <TileLayer
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"
+            attribution="Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics &amp; OpenStreetMap contributors"
           />
           <FitHelper bbox={fit ?? NEPAL_BBOX} />
           <MapDeselect
@@ -374,67 +435,95 @@ export function NationalMap() {
               </CircleMarker>
             )
           })}
-          {layers.projects && visibleProjects.map(({ p, district: dd, lat, lon }) => (
+          {layers.projects && visibleProjects.map(({ p, district: dd, provinceLevel, lat, lon }) => (
             <CircleMarker
               key={`p-${p.name}`}
               center={[lat as number, lon as number]}
-              radius={6}
-              pathOptions={{ color: '#ffffff', weight: 1.5, fillColor: STATUS_COLOR[p.status] ?? '#0d7c5f', fillOpacity: 0.95 }}
+              radius={provinceLevel ? 8 : 6}
+              pathOptions={{
+                color: '#ffffff', weight: 1.5,
+                fillColor: STATUS_COLOR[p.status] ?? '#0d7c5f',
+                fillOpacity: 0.95,
+                dashArray: provinceLevel ? '3 2' : undefined,
+              }}
             >
               <Tooltip direction="top" sticky>{p.name} · {p.progress}%</Tooltip>
               <Popup>
                 <div style={{ fontSize: '.75rem', lineHeight: 1.45 }}>
                   <strong>{p.name}</strong><br />
                   {p.status} · {p.progress}% · {p.budget}
-                  {dd ? <><br />≈ {dd} district (approx.)</> : null}<br />
+                  {dd ? <><br />≈ {dd} district</> : <><br />≈ {p.province} (province-level pin)</>}<br />
                   <a href={`/projects/${slugify(p.name)}`}>Open tracker →</a>
                 </div>
               </Popup>
             </CircleMarker>
           ))}
           {layers.hydro && visibleHydro.map((h, i) => (
-            <CircleMarker
+            <Marker
               key={`h-${h.name}-${i}`}
-              center={[h.lat, h.lng]}
-              radius={Math.min(11, 3 + Math.sqrt(Math.max(0, h.mw)) / 4)}
-              pathOptions={{ color: '#ffffff', weight: 1, fillColor: '#0891b2', fillOpacity: 0.85 }}
+              position={[h.lat, h.lng]}
+              icon={L.divIcon({
+                html: `<span class="hydro-pin${hydroSel?.name === h.name ? ' active' : ''}">${hydroPinSvg(h.mw)}</span>`,
+                className: 'hydro-pin-wrap',
+                iconSize: [34, 34],
+                iconAnchor: [17, 17],
+              })}
+              eventHandlers={{ click: () => setHydroSel(cur => (cur?.name === h.name ? null : h)) }}
             >
               <Tooltip direction="top" sticky>{h.name} · {h.mw} MW</Tooltip>
-              <Popup>
-                <div style={{ fontSize: '.75rem', lineHeight: 1.45 }}>
-                  <strong>{h.name}</strong><br />
-                  {h.mw} MW · {h.river} river<br />
-                  Commissioned {h.startYear}
-                </div>
-              </Popup>
-            </CircleMarker>
+            </Marker>
           ))}
-          {layers.quakes && visibleQuakes.map(q => (
-            <CircleMarker
-              key={`q-${q.id}`}
-              center={[q.coordinates[1], q.coordinates[0]]}
-              radius={3 + q.mag}
-              pathOptions={{ color: '#ffffff', weight: 1, fillColor: q.mag >= 4.5 ? '#dc2626' : '#f59e0b', fillOpacity: 0.9 }}
-            >
-              <Tooltip direction="top" sticky>M{q.mag.toFixed(1)} · {q.place}</Tooltip>
-              <Popup>
-                <div style={{ fontSize: '.75rem', lineHeight: 1.45 }}>
-                  <strong>Magnitude {q.mag.toFixed(1)}</strong><br />
-                  {q.place}<br />
-                  <a href={q.url} target="_blank" rel="noreferrer">USGS event →</a>
-                </div>
-              </Popup>
-            </CircleMarker>
-          ))}
+          {layers.quakes && yearQuakes.map(q => {
+            const qc = q.mag >= 4.5 ? '#dc2626' : '#f59e0b'
+            const big = q.mag >= 4.5
+            return (
+              <Marker
+                key={`q-${q.id}`}
+                position={[q.coordinates[1], q.coordinates[0]]}
+                icon={L.divIcon({
+                  html: `<span class="quake-ripples${big ? ' big' : ''}${quakeSel?.id === q.id ? ' selected' : ''}" style="--qc:${qc}"><span class="quake-pin">${quakePinSvg(qc)}</span></span>`,
+                  className: 'quake-pin-wrap',
+                  iconSize: [32, 32],
+                  iconAnchor: [16, 16],
+                })}
+                eventHandlers={{ click: () => setQuakeSel(cur => (cur?.id === q.id ? null : q)) }}
+              >
+                <Tooltip direction="top" sticky>M{q.mag.toFixed(1)} · {q.place}</Tooltip>
+              </Marker>
+            )
+          })}
+          {layers.quakesPast && pastQuakes.map(q => {
+            const qc = q.mag >= 4.5 ? '#dc2626' : '#b45309'
+            return (
+              <Marker
+                key={`qp-${q.id}`}
+                position={[q.coordinates[1], q.coordinates[0]]}
+                icon={L.divIcon({
+                  html: `<span class="quake-pin" style="opacity:.8">${quakePinSvg(qc)}</span>`,
+                  className: 'quake-pin-wrap',
+                  iconSize: [32, 32],
+                  iconAnchor: [16, 16],
+                })}
+                eventHandlers={{ click: () => setQuakeSel(cur => (cur?.id === q.id ? null : q)) }}
+              >
+                <Tooltip direction="top" sticky>M{q.mag.toFixed(1)} · {q.place}</Tooltip>
+              </Marker>
+            )
+          })}
           {layers.weather && visibleStations.map(s => (
-            <CircleMarker
+            <Marker
               key={`w-${s.id}`}
-              center={[s.latitude, s.longitude]}
-              radius={4}
-              pathOptions={{ color: '#ffffff', weight: 1, fillColor: '#2563eb', fillOpacity: 0.9 }}
+              position={[s.latitude, s.longitude]}
+              icon={L.divIcon({
+                html: `<span class="sky-pin${stationSel?.id === s.id ? ' active' : ''}">${skyMarkerSvg(skyKind(s.condition), !isNptDay())}</span>`,
+                className: 'sky-pin-wrap',
+                iconSize: [32, 32],
+                iconAnchor: [16, 16],
+              })}
+              eventHandlers={{ click: () => setStationSel(cur => (cur?.id === s.id ? null : s)) }}
             >
               <Tooltip direction="top" sticky>{s.name}{s.condition ? ` · ${s.condition}` : ''}</Tooltip>
-            </CircleMarker>
+            </Marker>
           ))}
           {layers.incidents && visibleIncidents.map(i => (
             <CircleMarker
@@ -454,6 +543,181 @@ export function NationalMap() {
         <span><i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#0891b2', marginRight: '.25rem' }} />Hydro</span>
         <span><i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', marginRight: '.25rem' }} />Tremors</span>
       </div>
+
+      {stationSel && (
+        <div className="atlas-float atlas-station">
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '.5rem' }}>
+            <div>
+              <p className="eyebrow" style={{ margin: 0 }}>DHM STATION</p>
+              <strong style={{ fontSize: '.95rem' }}>{stationSel.name}</strong>
+              <p className="muted" style={{ margin: '.1rem 0 0', fontSize: '.62rem' }}>
+                {stationSel.latitude.toFixed(2)}°N, {stationSel.longitude.toFixed(2)}°E
+              </p>
+            </div>
+            <button onClick={() => setStationSel(null)} aria-label="Close station" style={{ fontSize: '.8rem', fontWeight: 700 }} className="text-tertiary">✕</button>
+          </div>
+          {stationLoading ? (
+            <p className="muted" style={{ fontSize: '.72rem', margin: '.7rem 0 0' }}>Reading live sensors…</p>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '.7rem', marginTop: '.6rem' }}>
+                <WeatherIcon kind={skyKind(stationSel.condition)} size={54} night={!isNptDay()} />
+                <div>
+                  <strong style={{ fontSize: '1.9rem', letterSpacing: '-.04em', lineHeight: 1, display: 'block' }}>
+                    {stationWx?.temperature_2m != null ? `${stationWx.temperature_2m.toFixed(1)}°C` : '—'}
+                  </strong>
+                  <span style={{ fontSize: '.68rem' }} className="text-secondary">
+                    {stationSel.condition ?? ''}{stationPm != null ? ` · PM2.5 ${stationPm.toFixed(1)}` : ''}
+                  </span>
+                </div>
+              </div>
+              {stationSel.sunrise && stationSel.sunset && (
+                <p style={{ margin: '.45rem 0 0', fontSize: '.66rem' }} className="text-secondary">
+                  ↑ {shortClock(stationSel.sunrise)} · ↓ {shortClock(stationSel.sunset)}
+                </p>
+              )}
+              {stationHourly.length > 1 && (
+                <div style={{ marginTop: '.5rem' }}>
+                  <LineChart
+                    data={stationHourly.filter((_, i) => i % 2 === 0).map(h => ({ year: h.time, value: h.value }))}
+                    color="var(--primary)"
+                    height={90}
+                    formatValue={v => `${v.toFixed(1)}°C`}
+                    title="Last 24 hours"
+                  />
+                </div>
+              )}
+              {stationSel.days.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', marginTop: '.4rem' }}>
+                  {[...stationSel.days].sort((a, b) => (a.day ?? 0) - (b.day ?? 0)).slice(0, 3).map(d => (
+                    <div key={d.day} className="signal" style={{ padding: '.5rem 0' }}>
+                      <WeatherIcon kind={skyKind(d.weather?.name)} size={30} night={!isNptDay()} />
+                      <div>
+                        <strong>{d.from_temperature ?? '—'}° / {d.to_temperature ?? '—'}°</strong>
+                        <p>{forecastDayLabel(d.day, undefined)} · {d.weather?.name ?? ''} · {d.rain_probability}% rain</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Link
+                href={`/environment/${slugify(stationSel.name)}`}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '.35rem',
+                  marginTop: '.7rem', padding: '.55rem', borderRadius: 9,
+                  fontSize: '.72rem', fontWeight: 800, background: 'var(--primary)', color: '#fff',
+                }}
+              >
+                View full details →
+              </Link>
+            </>
+          )}
+        </div>
+      )}
+
+      {hydroSel && (
+        <div className="atlas-float atlas-station" style={{ overflow: 'hidden', padding: 0 }}>
+          <div style={{ background: 'linear-gradient(135deg, #0e7490 0%, #155e75 60%, #164e63 100%)', color: '#fff', padding: '.9rem 1rem 1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '.5rem' }}>
+              <p className="eyebrow" style={{ margin: 0, color: '#a5f3fc' }}>HYDROPOWER · NITI/NAXA</p>
+              <button onClick={() => setHydroSel(null)} aria-label="Close plant" style={{ fontSize: '.8rem', fontWeight: 700, color: '#fff', opacity: .8 }}>✕</button>
+            </div>
+            <strong style={{ fontSize: '1.05rem', display: 'block', marginTop: '.2rem', lineHeight: 1.25 }}>{hydroSel.name}</strong>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '.45rem', marginTop: '.5rem' }}>
+              <strong style={{ fontSize: '2.2rem', letterSpacing: '-.04em', lineHeight: 1 }}>{hydroSel.mw}</strong>
+              <span style={{ fontSize: '.72rem', opacity: .85 }}>MW installed</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 99, background: 'rgba(255,255,255,.22)', marginTop: '.6rem', position: 'relative' }}>
+              <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.min(100, Math.max(4, (hydroSel.mw / 900) * 100))}%`, borderRadius: 99, background: 'linear-gradient(90deg, #67e8f9, #fff)' }} />
+            </div>
+            <p style={{ fontSize: '.6rem', margin: '.35rem 0 0', opacity: .7 }}>Scale vs the 900 MW class (Arun-3)</p>
+          </div>
+          <div style={{ padding: '.8rem 1rem .9rem', display: 'flex', flexDirection: 'column', gap: '.45rem', fontSize: '.72rem' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '.45rem' }} className="text-secondary">
+              <Waves size={14} style={{ color: '#0891b2', flexShrink: 0 }} /> {hydroSel.river} river
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '.45rem' }} className="text-secondary">
+              <CalendarDays size={14} style={{ color: '#0891b2', flexShrink: 0 }} /> Commissioned {hydroSel.startYear}
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '.45rem' }} className="text-secondary">
+              <MapPin size={14} style={{ color: '#0891b2', flexShrink: 0 }} /> {hydroSel.lat.toFixed(3)}°N, {hydroSel.lng.toFixed(3)}°E · GPS-exact
+            </span>
+          </div>
+        </div>
+      )}
+
+      {quakeSel && (
+        <div className="atlas-float atlas-station">
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '.5rem' }}>
+            <div>
+              <p className="eyebrow" style={{ margin: 0 }}>TREMOR · USGS {quakeSel.time >= BS2083_START ? 'BS 2083' : 'ARCHIVE'}</p>
+              <strong style={{ fontSize: '1.05rem', display: 'block', marginTop: '.15rem', lineHeight: 1.3 }}>{quakeSel.place.replace(/, Nepal$/, '')}</strong>
+            </div>
+            <button onClick={() => setQuakeSel(null)} aria-label="Close tremor" style={{ fontSize: '.8rem', fontWeight: 700 }} className="text-tertiary">✕</button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '.5rem', marginTop: '.6rem' }}>
+            <strong style={{ fontSize: '2.2rem', letterSpacing: '-.04em', lineHeight: 1, color: quakeSel.mag >= 4.5 ? 'var(--danger)' : 'var(--warning)' }}>
+              M{quakeSel.mag.toFixed(1)}
+            </strong>
+            <span style={{ fontSize: '.7rem' }} className="text-secondary">magnitude</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.4rem', marginTop: '.6rem' }}>
+            <div style={{ padding: '.5rem .6rem' }} className="bg-sunken rounded-[8px]">
+              <span style={{ fontSize: '.56rem', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }} className="text-tertiary">When</span>
+              <strong style={{ display: 'block', fontSize: '.76rem', marginTop: '.1rem' }}>
+                {new Date(quakeSel.time).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' })} NPT
+              </strong>
+            </div>
+            <div style={{ padding: '.5rem .6rem' }} className="bg-sunken rounded-[8px]">
+              <span style={{ fontSize: '.56rem', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }} className="text-tertiary">Depth</span>
+              <strong style={{ display: 'block', fontSize: '.76rem', marginTop: '.1rem' }}>{quakeSel.depthKm != null ? `${Math.round(quakeSel.depthKm)} km` : '—'}</strong>
+            </div>
+          </div>
+          <p style={{ margin: '.55rem 0 0', fontSize: '.66rem' }} className="text-secondary">
+            {quakeSel.coordinates[1].toFixed(3)}°N, {quakeSel.coordinates[0].toFixed(3)}°E ·{' '}
+            <a href={quakeSel.url} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700 }}>USGS event page →</a>
+          </p>
+        </div>
+      )}
+
+      {district && !stationSel && !hydroSel && !quakeSel && (() => {
+        const d = districts.find(x => x.name === district)
+        if (!d) return null
+        const hq = localByName.get(normName(d.name))?.hq
+        const inBox = d.bbox
+        const nProj = projectPoints.filter(x => x.district === d.name).length
+        const nHydro = inBox ? hydro.filter(h => h.lng >= inBox[0] && h.lng <= inBox[2] && h.lat >= inBox[1] && h.lat <= inBox[3]).length : 0
+        const nQuake = inBox ? quakes.filter(q => q.coordinates[0] >= inBox[0] && q.coordinates[0] <= inBox[2] && q.coordinates[1] >= inBox[1] && q.coordinates[1] <= inBox[3]).length : 0
+        const nInc = inBox ? incidents.filter(i => i.point && i.point.coordinates[0] >= inBox[0] && i.point.coordinates[0] <= inBox[2] && i.point.coordinates[1] >= inBox[1] && i.point.coordinates[1] <= inBox[3]).length : 0
+        return (
+          <div className="atlas-float atlas-station">
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '.5rem' }}>
+              <div>
+                <p className="eyebrow" style={{ margin: 0 }}>{d.province.toUpperCase()} PROVINCE</p>
+                <strong style={{ fontSize: '1.1rem', display: 'block', marginTop: '.15rem' }}>{d.name}</strong>
+                <p className="muted" style={{ margin: '.1rem 0 0', fontSize: '.64rem' }}>
+                  {hq ? `HQ ${hq} · ` : ''}{d.lat.toFixed(2)}°N, {d.lon.toFixed(2)}°E
+                </p>
+              </div>
+              <button onClick={() => setDistrict(null)} aria-label="Close district" style={{ fontSize: '.8rem', fontWeight: 700 }} className="text-tertiary">✕</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.4rem', marginTop: '.7rem' }}>
+              {[
+                ['Projects', nProj, '#16a34a'],
+                ['Hydro plants', nHydro, '#0891b2'],
+                ['Tremors', nQuake, '#f59e0b'],
+                ['Incidents', nInc, '#7c3aed'],
+              ].map(([label, n, c]) => (
+                <div key={label as string} style={{ padding: '.5rem .6rem' }} className="bg-sunken rounded-[8px]">
+                  <span style={{ fontSize: '.56rem', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }} className="text-tertiary">{label}</span>
+                  <strong style={{ display: 'block', fontSize: '1rem', marginTop: '.1rem', color: c as string }}>{n as number}</strong>
+                </div>
+              ))}
+            </div>
+            <p className="muted" style={{ fontSize: '.62rem', margin: '.6rem 0 0' }}>Projects in scope are listed in the right panel.</p>
+          </div>
+        )
+      })()}
 
       <aside className="atlas-float atlas-side">
         <div className="panel" style={{ padding: '.9rem 1rem' }}>
@@ -505,11 +769,12 @@ export function NationalMap() {
           <p className="eyebrow" style={{ margin: 0 }}>LAYERS</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '.35rem', marginTop: '.5rem' }}>
             {([
-              ['projects', '#16a34a', `Projects (${counts.projects})`, 'district-centroid ≈'],
+              ['projects', '#16a34a', `Projects (${counts.projects})`, 'district ≈ · dashed = province'],
               ['hydro', '#0891b2', `Hydropower (${counts.hydro})`, 'GPS exact'],
-              ['quakes', '#f59e0b', `Tremors (${counts.quakes})`, 'USGS live'],
-              ['weather', '#2563eb', `Weather stations (${counts.weather})`, 'DHM'],
-              ['incidents', '#7c3aed', `Incidents (${counts.incidents})`, 'BIPAD'],
+              ['quakes', '#f59e0b', `Tremors 2083 (${counts.quakes})`, 'USGS live'],
+              ['quakesPast', '#b45309', `Historical (${counts.quakesPast})`, 'older quakes'],
+              ['weather', '#2563eb', `Stations (${counts.weather})`, 'DHM · tap for details'],
+              ['incidents', '#7c3aed', `Incidents BS 2083 (${counts.incidents})`, 'BIPAD'],
             ] as [keyof Layers, string, string, string][]).map(([k, c, label, note]) => (
               <button
                 key={k}
@@ -530,12 +795,12 @@ export function NationalMap() {
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', marginTop: '.4rem', maxHeight: 300, overflowY: 'auto' }}>
             {visibleProjects.length === 0 && <p className="muted" style={{ fontSize: '.7rem' }}>No tracked projects here — try clearing the district.</p>}
-            {visibleProjects.map(({ p }) => (
+            {visibleProjects.map(({ p, district: dd, provinceLevel }) => (
               <Link key={p.name} href={`/projects/${slugify(p.name)}`} className="source-row" style={{ padding: '.5rem 0' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_COLOR[p.status] ?? '#0d7c5f', flexShrink: 0 }} />
                 <div style={{ minWidth: 0 }}>
                   <strong style={{ fontSize: '.74rem', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</strong>
-                  <p style={{ margin: 0 }}>{p.status} · {p.progress}% · {p.budget}</p>
+                  <p style={{ margin: 0 }}>{p.status} · {p.progress}% · {p.budget} · ≈ {dd ?? `${p.province} province`}</p>
                 </div>
               </Link>
             ))}

@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useState } from 'react'
-import { TrendingUp, TrendingDown, ExternalLink, Activity, BarChart3 } from 'lucide-react'
+import { TrendingUp, TrendingDown, ExternalLink, Activity, BarChart3, ChevronDown, ChevronUp } from 'lucide-react'
 import { fetchNepseStocks, fetchNepseMarketSummary, fetchNepseMarketStatus, fetchNepseIndex, fetchUpcomingIpos, formatNprAmount, formatNumber, type NepseUpcomingIpo } from '@/lib/nepse'
 import type { NepseIndex, NepseMarketSummary, NepseStock } from '@/lib/types'
 
@@ -41,6 +41,7 @@ export function NepseTicker() {
   const [ipos, setIpos] = useState<NepseUpcomingIpo[]>([])
   const [index, setIndex] = useState<NepseIndex | null>(null)
   const [openRow, setOpenRow] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -100,7 +101,7 @@ export function NepseTicker() {
             <span style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '.2rem' }} className={good ? 'text-primary' : 'text-danger'}>
               {good ? <TrendingUp size={11} /> : <TrendingDown size={11} />} {good ? '+' : ''}{(g.percentChange ?? 0).toFixed(2)}%
             </span>
-            <span style={{ fontSize: '.62rem', display: 'block' }} className="text-secondary">NPR {g.ltp.toLocaleString()}</span>
+            <span style={{ fontSize: '.62rem', display: 'block' }} className="text-secondary">{formatNprAmount(g.ltp)}</span>
           </span>
         </button>
         {open && (
@@ -135,7 +136,19 @@ export function NepseTicker() {
         <a href="https://nepalstock.com" target="_blank" rel="noreferrer" style={{ fontSize: '.66rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '.2rem' }} className="text-primary">
           Official <ExternalLink size={11} />
         </a>
+        <button type="button" aria-expanded={expanded} aria-controls="nepse-live-details" onClick={() => setExpanded(value => !value)} style={{ fontSize: '.66rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '.2rem' }} className="text-secondary">
+          {expanded ? 'Hide market' : 'Expand market'} {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        </button>
       </div>
+      {!expanded && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.6rem', flexWrap: 'wrap', padding: '.55rem .7rem' }} className="bg-sunken rounded-[8px]">
+          <span style={{ fontSize: '.64rem' }} className="text-secondary">NEPSE Index <strong className="text-ink">{index ? index.close.toFixed(2) : '—'}</strong>
+            {index && <strong style={{ marginLeft: '.3rem' }} className={idxUp ? 'text-primary' : 'text-danger'}>{idxUp ? '+' : ''}{index.changePct.toFixed(2)}%</strong>}
+          </span>
+          <span style={{ fontSize: '.64rem' }} className="text-tertiary">{stocks.length} securities · {summary ? `Turnover ${formatNprAmount(summary.totalTurnover)}` : 'Live figures'}</span>
+        </div>
+      )}
+      <div id="nepse-live-details" hidden={!expanded}>
       {/* Index hero */}
       {index && (
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', padding: '.7rem .8rem' }} className="bg-sunken rounded-[10px]">
@@ -223,13 +236,14 @@ export function NepseTicker() {
       {ipos.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '.45rem', flexWrap: 'wrap', padding: '.5rem .6rem' }} className="bg-primary-50 rounded-[8px]">
           <span style={{ fontSize: '.6rem', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase' }} className="text-primary">IPO pipeline</span>
-          {ipos.map(ip => (
-            <span key={ip.company} style={{ fontSize: '.68rem' }} className="text-ink">
+          {ipos.map((ip, i) => (
+            <span key={`${ip.company}-${ip.date_range}-${i}`} style={{ fontSize: '.68rem' }} className="text-ink">
               <strong>{ip.company}</strong> <span className="text-secondary">· {ip.date_range}</span>
             </span>
           ))}
         </div>
       )}
+      </div>
     </div>
   )
 }

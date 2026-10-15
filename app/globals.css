@@ -689,6 +689,32 @@ img { display: block; max-width: 100%; }
   animation: sunPulse 5s ease-in-out infinite;
 }
 @keyframes sunPulse { 50% { transform: scale(1.06); } }
+/* Night mode: deep sky, moon + twinkling stars */
+.hero-visual.night {
+  background:
+    radial-gradient(45% 55% at 70% 20%, rgba(120, 140, 255, .18) 0%, transparent 70%),
+    radial-gradient(70% 80% at 30% 90%, rgba(30, 60, 120, .5) 0%, transparent 70%),
+    linear-gradient(160deg, #0b1026 0%, #131a3a 60%, #1c2450 100%);
+}
+.hero-visual .moon {
+  position: absolute; top: 10%; right: 12%; width: 72px; height: 72px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fdfbf3 0%, #e8e4d2 55%, rgba(210, 205, 180, 0) 75%);
+  filter: drop-shadow(0 0 22px rgba(240, 235, 200, .55));
+  animation: sunPulse 6s ease-in-out infinite;
+}
+.hero-visual .moon::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  background:
+    radial-gradient(circle 7px at 62% 30%, rgba(180,175,150,.5) 98%, transparent),
+    radial-gradient(circle 5px at 40% 60%, rgba(180,175,150,.45) 98%, transparent),
+    radial-gradient(circle 4px at 68% 68%, rgba(180,175,150,.4) 98%, transparent);
+}
+.hero-visual .star {
+  position: absolute; border-radius: 50%; background: #fff;
+  animation: twinkle 3s ease-in-out infinite;
+}
+@keyframes twinkle { 50% { opacity: .25; transform: scale(.8); } }
+@media (prefers-reduced-motion: reduce) { .hero-visual .moon, .hero-visual .star { animation: none; } }
 .hero-visual .ridge { position: absolute; left: -5%; right: -5%; bottom: -2%; height: 46%; opacity: .5; }
 .chip {
   position: absolute; display: flex; align-items: center; gap: .55rem;
@@ -784,6 +810,7 @@ img { display: block; max-width: 100%; }
 @keyframes wxFlash { 0%, 55%, 100% { opacity: 1; } 62%, 72% { opacity: .25; } 67% { opacity: 1; } }
 .wx-fogline { animation: wxFog 4s ease-in-out infinite; }
 @keyframes wxFog { 50% { transform: translateX(4px); } }
+.wx-star { animation: twinkle 3s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .wx-rays, .wx-drift, .wx-drop, .wx-flake, .wx-flash, .wx-fogline { animation: none; }
 }
@@ -821,7 +848,7 @@ img { display: block; max-width: 100%; }
   .map-layout { grid-template-columns: 1fr !important; }
 }
 /* Full-bleed atlas: map owns the viewport, panels float like Google Maps */
-.atlas-page { position: relative; height: calc(100dvh - 64px); min-height: 520px; }
+.atlas-page { position: relative; height: 100dvh; min-height: 520px; }
 .atlas-map { position: absolute; inset: 0; }
 .atlas-map .leaflet-container { height: 100%; width: 100%; }
 .atlas-float {
@@ -840,19 +867,93 @@ img { display: block; max-width: 100%; }
   left: 14px; bottom: 14px; padding: .55rem .8rem;
   display: flex; gap: .8rem; align-items: center; font-size: .64rem; font-weight: 700;
 }
+.atlas-station {
+  left: 14px; top: 50%; transform: translateY(-50%);
+  width: 320px; max-height: calc(100dvh - 200px); overflow-y: auto;
+  padding: .9rem 1rem;
+  animation: stationIn .22s ease;
+}
+@keyframes stationIn { from { transform: translate(-12px, -50%); opacity: 0; } to { transform: translate(0, -50%); opacity: 1; } }
 @media (max-width: 900px) {
   .atlas-page { height: auto; min-height: 0; display: flex; flex-direction: column; }
   .atlas-map { position: relative; height: 62dvh; min-height: 380px; order: -1; }
-  .atlas-float { position: static; margin: .6rem .8rem 0; }
+  .atlas-float { position: static; margin: .6rem .8rem 0; transform: none; animation: none; }
   .atlas-side { width: auto; max-height: none; overflow: visible; margin-bottom: .8rem; }
+  .atlas-station { width: auto; max-height: none; }
   .atlas-legend { margin-bottom: .8rem; }
 }
 .leaflet-container { font-family: var(--font); }
+.leaflet-tile-pane { transition: filter 3s ease; }
+.night-tiles .leaflet-tile-pane { filter: brightness(.62) invert(1) contrast(.92) hue-rotate(180deg) saturate(.7); }
+.env-hero.night { background: linear-gradient(160deg, #0b1026 0%, #141b3d 60%, #1c2450 100%); }
 .leaflet-control-attribution { font-size: 9px !important; background: rgba(255,255,255,.7) !important; }
 .leaflet-popup-content-wrapper { border-radius: 12px !important; }
 .leaflet-popup-content { margin: .7rem .9rem !important; line-height: 1.45; }
 .leaflet-popup-content a { color: var(--accent); font-weight: 700; }
 .leaflet-tooltip { border-radius: 8px !important; border: 1px solid var(--border) !important; box-shadow: var(--shadow-md) !important; font-size: .68rem !important; font-weight: 600; }
+
+/* ─── CALENDAR (yomeroshare grammar: grid + day/upcoming panels) ─── */
+.cal-layout { grid-template-columns: 1.6fr 1fr; }
+.cal-tabs { display: none; }
+@media (min-width: 901px) {
+  .cal-panels > section { display: block !important; }
+}
+@media (max-width: 900px) {
+  .cal-layout { grid-template-columns: 1fr; }
+  .cal-tabs { display: flex; }
+  .cal-hero-grid { grid-template-columns: 1fr !important; }
+}
+@media (max-width: 640px) {
+  .cal-secondary { display: none; }
+}
+
+/* Sky icon pins (weather stations) */
+.sky-pin-wrap { background: none; border: none; }
+.sky-pin {
+  width: 32px; height: 32px; display: grid; place-items: center;
+  background: rgba(255,255,255,.94); border-radius: 50%;
+  border: 1.5px solid var(--border); box-shadow: var(--shadow-md);
+  cursor: pointer; transition: transform .15s ease;
+}
+.sky-pin:hover { transform: scale(1.12); }
+.sky-pin.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light), var(--shadow-md); }
+
+/* Energy bolt pins (hydropower) */
+.hydro-pin-wrap { background: none; border: none; }
+.hydro-pin {
+  width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%;
+  background: linear-gradient(135deg, #0e7490 0%, #155e75 100%);
+  border: 1.5px solid rgba(255,255,255,.9); box-shadow: var(--shadow-md);
+  cursor: pointer; transition: transform .15s ease;
+  padding: 3px;
+}
+.hydro-pin:hover { transform: scale(1.12); }
+.hydro-pin.active { border-color: #fff; box-shadow: 0 0 0 3px var(--accent-light), var(--shadow-md); }
+
+/* Seismic pins (tremors) */
+.quake-pin-wrap { background: none; border: none; }
+.quake-ripples { position: relative; width: 32px; height: 32px; display: block; }
+.quake-ripples::before, .quake-ripples::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  border: 2px solid var(--qc, #f59e0b);
+  animation: quakeRipple 2.6s ease-out infinite; pointer-events: none;
+}
+.quake-ripples::after { animation-delay: 1.3s; }
+.quake-ripples.big::before, .quake-ripples.big::after { border-width: 3px; animation-duration: 1.8s; }
+.quake-ripples.big::after { animation-delay: .9s; }
+.quake-ripples.selected .quake-pin { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light), var(--shadow-md); }
+@keyframes quakeRipple {
+  from { transform: scale(1); opacity: .85; }
+  to { transform: scale(2.3); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .quake-ripples::before, .quake-ripples::after { animation: none; }
+}
+.quake-pin {
+  width: 32px; height: 32px; display: grid; place-items: center;
+  background: rgba(255,255,255,.94); border-radius: 50%;
+  border: 1.5px solid var(--border); box-shadow: var(--shadow-md);
+}
 
 /* ─── DARK MODE ─── */
 @media (prefers-color-scheme: dark) {

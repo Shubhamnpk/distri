@@ -1,19 +1,61 @@
 export type CheckState = 'Done' | 'Active' | 'Blocked' | 'Unknown'
 
+export type CompanyAnnualFinancial = {
+  year: string
+  revenue?: string
+  result?: string
+  source?: string
+  sourceUrl?: string
+  note?: string
+}
+
+export type PublicFundFinancialYear = {
+  year: string
+  contributions?: string
+  investmentIncome?: string
+  operatingIncome?: string
+  claimsSubmitted?: string
+  benefitsPaid?: string
+  operatingExpenses?: string
+  annualSurplus?: string
+  totalAssets?: string
+  fundReserves?: string
+  source: string
+  sourceUrl: string
+  note?: string
+}
+
 export type Company = {
   name: string
+  entityType?: 'Statutory public fund' | 'Statutory public regulator'
   sector: string
   year: string
   revenue: string
   result: string
-  resultType: 'up' | 'down'
-  coverage: 'Verified' | 'Partial' | 'Pending'
-  operatingStatus: 'Operating' | 'Closed' | 'Not yet operational'
+  resultType: 'up' | 'down' | 'unknown'
+  ownership?: string
+  operatingStatus: 'Operating' | 'Closed'
   source: string
   sourceUrl: string
   note: string
   logo?: string
   quarters: { label: string; revenue: string; result: string; state: CheckState }[]
+  annualFinancials?: CompanyAnnualFinancial[]
+  publicFundFinancials?: PublicFundFinancialYear[]
+}
+
+export type OwnershipSlice = { label: string; percent: number; kind: 'government' | 'public' | 'other' }
+export type CompanyProfile = {
+  earnsFrom: string
+  earningsCaveat?: string
+  ownershipContext: string
+  ownershipSlices?: OwnershipSlice[]
+  ministry?: string
+  ministryUrl?: string
+  websiteUrl?: string
+  nepseContext?: string
+  nepseUrl?: string
+  nepseDirectoryUrl?: string
 }
 
 export type ProjectUpdateType = 'Milestone' | 'Update' | 'Alert' | 'News'
@@ -25,23 +67,36 @@ export type ProjectUpdate = {
   type: ProjectUpdateType
 }
 
+export type ProjectChange = {
+  date: string
+  field: string
+  from: string
+  to: string
+  source: string
+  sourceUrl: string
+  note?: string
+}
+
 export type Project = {
   name: string
   ministry: string
   location: string
   province?: 'Koshi' | 'Madhesh' | 'Bagmati' | 'Gandaki' | 'Lumbini' | 'Karnali' | 'Sudurpashchim' | 'National'
   budget: string
+  budgetNote?: string
   progress: number
   status: 'On track' | 'At risk' | 'Delayed' | 'Completed'
-  category: 'Hydropower' | 'Highway' | 'Airport' | 'Irrigation' | 'Water' | 'Heritage' | 'Sports' | 'Rail' | 'Conservation'
+  category: 'Hydropower' | 'Power' | 'Highway' | 'Airport' | 'Irrigation' | 'Water' | 'Heritage' | 'Sports' | 'Rail' | 'Conservation'
   description?: string
   updated: string
   spent: string
+  spentNote?: string
   target: string
   source: string
   sourceUrl: string
   image: string
   gallery?: string[]
+  changeLog?: ProjectChange[]
   completionNote?: string
   checklist: { label: string; state: CheckState; date: string; note: string }[]
   updates?: ProjectUpdate[]
@@ -95,6 +150,7 @@ export type NepseReport = {
   eps: number | null
   paid_up_capital: number | null
   profit: number | null
+  revenue?: number | null
   net_worth_per_share: number | null
 }
 

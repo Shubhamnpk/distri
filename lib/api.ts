@@ -1,3 +1,4 @@
+import { NPR_SYMBOL } from '@/lib/currency'
 import { fetchNepseData } from './nepse'
 import { fetchProjectNepalDistricts, fetchProjectNepalProjects } from './project-nepal'
 import { getRelevantDatasets } from './opendatanepal'
@@ -226,10 +227,10 @@ export function formatUsd(v: number): string {
 export function formatNpr(v: number, rate?: number): string {
   const r = rate ?? cachedNprRate ?? NPR_FALLBACK
   const npr = v * r
-  if (npr >= 1e12) return `NPR ${(npr / 1e12).toFixed(1)} Kharab`
-  if (npr >= 1e9) return `NPR ${(npr / 1e9).toFixed(0)} Arba`
-  if (npr >= 1e7) return `NPR ${(npr / 1e7).toFixed(0)} Crore`
-  return `NPR ${Math.round(npr).toLocaleString()}`
+  if (npr >= 1e12) return `${NPR_SYMBOL} ${(npr / 1e12).toFixed(1)} Kharab`
+  if (npr >= 1e9) return `${NPR_SYMBOL} ${(npr / 1e9).toFixed(0)} Arba`
+  if (npr >= 1e7) return `${NPR_SYMBOL} ${(npr / 1e7).toFixed(0)} Crore`
+  return `${NPR_SYMBOL} ${Math.round(npr).toLocaleString()}`
 }
 
 export async function formatNprLive(v: number): Promise<string> {
