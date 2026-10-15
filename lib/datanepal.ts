@@ -1,4 +1,4 @@
-// DataNepal.org — open, documented public data for Nepal (MIT code, no key).
+// DataNepal.org - open, documented public data for Nepal (MIT code, no key).
 // Static JSON downloads, refreshed from primary sources (NSO census 2021,
 // UN OCHA boundaries, UNFPA projections, ECN 2026 results, World Bank WDI).
 // Verified live: /data/{indicators,places,geography,datasets}.json return arrays.
@@ -67,7 +67,7 @@ export async function fetchDataNepalDatasets(): Promise<DataNepalDataset[]> {
   return fetchDnJson<DataNepalDataset>('datasets')
 }
 
-/** Provinces only — handy for map/count filters without loading all 862 places. */
+/** Provinces only - handy for map/count filters without loading all 862 places. */
 export async function fetchDataNepalProvinces(): Promise<DataNepalPlace[]> {
   const places = await fetchDataNepalPlaces()
   return places.filter(p => p.admin_level === 1)

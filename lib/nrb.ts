@@ -1,6 +1,6 @@
 import type { WbDataPoint } from './api'
 
-// Nepal Rastra Bank — official FOREX API (no key, documented at nrb.org.np/api-docs-v1).
+// Nepal Rastra Bank - official FOREX API (no key, documented at nrb.org.np/api-docs-v1).
 // Base: https://www.nrb.org.np/api/forex/v1/rates?from=Y-m-d&to=Y-m-d&page=1&per_page=100
 // Verified live: status.code 200, data.payload[] with { date, rates[] }.
 // rates[].buy/sell arrive as strings; currency.iso3 is uppercase in payload.

@@ -68,7 +68,7 @@ export async function fetchDistrictProblems(provinceId: number, district: Projec
   const districtDir = `${String(district.id).padStart(2, '0')}-${slugifyDistrict(district.name)}`
   const url = `${BASE_URL}/content/${provinceDir}/districts/${districtDir}/problems/2082-severe-air-pollution.json`
   // Generic: list problems directory via GitHub API is not via raw; we fetch the known file as example and fallback to empty
-  // Instead, try to fetch the problems folder listing via raw is not supported — return empty and let caller fetch via GitHub API if needed
+  // Instead, try to fetch the problems folder listing via raw is not supported - return empty and let caller fetch via GitHub API if needed
   return []
 }
 

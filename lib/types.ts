@@ -78,28 +78,29 @@ export type NepseStock = {
 
 export type NepseCompanyProfile = {
   symbol: string
-  companyName: string
-  companyFullName: string
-  sector: string
-  listedDate: string
-  instrumentType: string
-  marketCap: number
-  eps: number
-  peRatio: number
-  bookValue: number
-  dividendYield: number
+  profile: string
+  email?: string
+  phone?: string
+  contact_person?: string
+  address?: string
+  status?: string
+}
+
+export type NepseReport = {
+  type: string // 'Quarterly Report' | 'Annual Report'
+  quarter: string
+  fy: string
+  fy_nepali?: string
+  pe: number | null
+  eps: number | null
+  paid_up_capital: number | null
+  profit: number | null
+  net_worth_per_share: number | null
 }
 
 export type NepseCompanyFinancial = {
   symbol: string
-  fiscalYear: string
-  revenue: number
-  netIncome: number
-  totalAssets: number
-  totalLiabilities: number
-  equity: number
-  eps: number
-  roe: number
+  reports: NepseReport[]
 }
 
 export type NepseMarketSummary = {
@@ -108,6 +109,20 @@ export type NepseMarketSummary = {
   totalTrades: number
   marketIndex: number
   indexChange: number
+  scripsTraded?: number
+  marketCap?: number
+}
+
+export type NepseIndex = {
+  name: string
+  close: number
+  change: number
+  changePct: number
+  previousClose: number
+  high: number
+  low: number
+  high52: number
+  low52: number
 }
 
 export type NepseData = {

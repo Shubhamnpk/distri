@@ -71,15 +71,15 @@ export function NepalMapReal({
   }
 
   return (
-    <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-lg)', padding: '1rem 1.1rem', boxShadow: 'var(--shadow-sm)' }}>
+    <div style={{ padding: '1rem 1.1rem' }} className="bg-card border border-line-light rounded-lg shadow-sm">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.6rem', flexWrap: 'wrap', gap: '.5rem' }}>
         <strong style={{ fontSize: '.82rem', letterSpacing: '-.02em' }}>Filter by province, click the map</strong>
-        <span style={{ fontSize: '.62rem', color: 'var(--text-tertiary)', background: 'var(--bg-sunken)', padding: '.2rem .5rem', borderRadius: 20 }}>
-          {nationalCount} national projects shown in every province
+        <span style={{ fontSize: '.62rem', padding: '.2rem .5rem' }} className="text-tertiary bg-sunken rounded-[20px]">
+          {nationalCount} national projects listed separately - use National
         </span>
       </div>
 
-      <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border-light)', height: 380, background: 'var(--bg-sunken)' }}>
+      <div style={{ overflow: 'hidden', height: 380 }} className="rounded-[12px] border border-line-light bg-sunken">
         {geoJson ? (
           <MapContainer
             center={[28.4, 84.2] as [number, number]}
@@ -89,7 +89,8 @@ export function NepalMapReal({
             maxZoom={8}
             maxBounds={[[26.0, 79.5] as [number, number], [31.0, 89.0] as [number, number]]}
             maxBoundsViscosity={0.9}
-            style={{ height: '100%', width: '100%', background: 'var(--bg-sunken)' }}
+            style={{ height: '100%', width: '100%' }}
+            className="bg-sunken"
             scrollWheelZoom={false}
             attributionControl={false}
             zoomControl={false}
@@ -102,7 +103,7 @@ export function NepalMapReal({
             />
           </MapContainer>
         ) : (
-          <div style={{ height: '100%', display: 'grid', placeItems: 'center', background: 'var(--bg-sunken)', color: 'var(--text-tertiary)', fontSize: '.78rem' }}>
+          <div style={{ height: '100%', display: 'grid', placeItems: 'center', fontSize: '.78rem' }} className="bg-sunken text-tertiary">
             Loading province boundaries…
           </div>
         )}
@@ -110,17 +111,17 @@ export function NepalMapReal({
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.35rem', marginTop: '.75rem' }}>
         <button onClick={() => onSelect('All')} style={{
-          padding: '.35rem .6rem', borderRadius: 6, fontSize: '.7rem', fontWeight: 600,
+          padding: '.35rem .6rem', fontSize: '.7rem', fontWeight: 600,
           background: selected === 'All' ? 'var(--accent)' : 'var(--bg-sunken)', color: selected === 'All' ? '#fff' : 'var(--text-secondary)',
-          border: '1px solid var(--border-light)', cursor: 'pointer'
-        }}>
+          cursor: 'pointer'
+        }} className="border border-line-light rounded-[6px]">
           All provinces
         </button>
         <button onClick={() => onSelect('National')} style={{
-          padding: '.35rem .6rem', borderRadius: 6, fontSize: '.7rem', fontWeight: 600,
+          padding: '.35rem .6rem', fontSize: '.7rem', fontWeight: 600,
           background: selected === 'National' ? 'var(--accent)' : 'var(--bg-sunken)', color: selected === 'National' ? '#fff' : 'var(--text-secondary)',
-          border: '1px solid var(--border-light)', cursor: 'pointer'
-        }}>
+          cursor: 'pointer'
+        }} className="border border-line-light rounded-[6px]">
           National ({nationalCount})
         </button>
         {['Koshi', 'Madhesh', 'Bagmati', 'Gandaki', 'Lumbini', 'Karnali', 'Sudurpashchim'].map(p => (
@@ -128,19 +129,16 @@ export function NepalMapReal({
             key={p}
             onClick={() => onSelect(p)}
             style={{
-              padding: '.35rem .6rem', borderRadius: 6, fontSize: '.7rem', fontWeight: 600,
+              padding: '.35rem .6rem', fontSize: '.7rem', fontWeight: 600,
               background: selected === p ? 'var(--accent)' : 'var(--bg-sunken)', color: selected === p ? '#fff' : 'var(--text-secondary)',
-              border: '1px solid var(--border-light)', cursor: 'pointer'
+              cursor: 'pointer'
             }}
+            className="border border-line-light rounded-[6px]"
           >
             {p} ({counts[p] ?? 0})
           </button>
         ))}
       </div>
-
-      <p style={{ margin: '.6rem 0 0', fontSize: '.62rem', color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-        Pure vector — <code>public/geo/nepal-provinces-simple.geojson</code> (Acesmndr/nepal-geojson, WGS84). No tile layer, just the 7 province shapes. National projects span multiple provinces and appear in every filter.
-      </p>
     </div>
   )
 }

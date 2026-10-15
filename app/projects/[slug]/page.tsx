@@ -14,9 +14,9 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const project = findProjectBySlug(slug)
-  if (!project) return { title: 'Project not found — Drishti' }
+  if (!project) return { title: 'Project not found - Drishti' }
   return {
-    title: `${project.name} — Drishti`,
+    title: `${project.name} - Drishti`,
     description: project.description?.slice(0, 150),
   }
 }
@@ -67,7 +67,7 @@ function getTimeline(project: import('@/lib/types').Project): ProjectUpdate[] {
   return [
     {
       date: project.updated,
-      title: `${project.progress}% — ${project.status}`,
+      title: `${project.progress}% - ${project.status}`,
       text: `${project.category} · ${project.ministry}. Budget ${project.budget}, spent ${project.spent}. Target ${project.target}. Source: ${project.source}.`,
       type: type as ProjectUpdate['type'],
     },
@@ -88,7 +88,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
         <Link
           href="/projects"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem', fontSize: '.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}
+          className="text-secondary"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem', fontSize: '.78rem', fontWeight: 600 }}
         >
           <ArrowLeft size={16} /> Back to projects
         </Link>
@@ -96,6 +97,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           {prev ? (
             <Link
               href={`/projects/${slugify(prev.name)}`}
+              className="border border-line bg-card text-secondary rounded-[6px]"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -103,22 +105,19 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 fontSize: '.72rem',
                 fontWeight: 600,
                 padding: '.4rem .65rem',
-                borderRadius: 6,
-                border: '1px solid var(--border)',
-                background: 'var(--bg-elevated)',
-                color: 'var(--text-secondary)',
               }}
             >
               <ArrowLeft size={13} /> {prev.name.length > 20 ? prev.name.slice(0, 20) + '…' : prev.name}
             </Link>
           ) : (
-            <span style={{ fontSize: '.72rem', padding: '.4rem .65rem', borderRadius: 6, border: '1px solid var(--border-light)', color: 'var(--text-tertiary)', background: 'var(--bg-sunken)' }}>
+            <span className="border border-line-light text-tertiary bg-sunken rounded-[6px]" style={{ fontSize: '.72rem', padding: '.4rem .65rem' }}>
               No previous
             </span>
           )}
           {next ? (
             <Link
               href={`/projects/${slugify(next.name)}`}
+              className="border border-line bg-card text-secondary rounded-[6px]"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -126,16 +125,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 fontSize: '.72rem',
                 fontWeight: 600,
                 padding: '.4rem .65rem',
-                borderRadius: 6,
-                border: '1px solid var(--border)',
-                background: 'var(--bg-elevated)',
-                color: 'var(--text-secondary)',
               }}
             >
               {next.name.length > 20 ? next.name.slice(0, 20) + '…' : next.name} <ArrowRight size={13} />
             </Link>
           ) : (
-            <span style={{ fontSize: '.72rem', padding: '.4rem .65rem', borderRadius: 6, border: '1px solid var(--border-light)', color: 'var(--text-tertiary)', background: 'var(--bg-sunken)' }}>
+            <span className="border border-line-light text-tertiary bg-sunken rounded-[6px]" style={{ fontSize: '.72rem', padding: '.4rem .65rem' }}>
               No next
             </span>
           )}
@@ -144,16 +139,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
       {/* Hero image */}
       <section
+        className="bg-card border border-line-light rounded-lg shadow-sm"
         style={{
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border-light)',
-          borderRadius: 'var(--radius-lg)',
           overflow: 'hidden',
-          boxShadow: 'var(--shadow-sm)',
           marginBottom: '1rem',
         }}
       >
-        <div style={{ position: 'relative', height: 'clamp(200px, 32vw, 320px)', overflow: 'hidden', background: 'var(--bg-sunken)' }}>
+        <div className="bg-sunken" style={{ position: 'relative', height: 'clamp(200px, 32vw, 320px)', overflow: 'hidden' }}>
           <img
             src={project.image}
             alt=""
@@ -166,9 +158,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               background: 'linear-gradient(to top, rgba(0,0,0,.55) 0%, rgba(0,0,0,.08) 55%, transparent 100%)',
             }}
           />
-          <div style={{ position: 'absolute', left: 'clamp(1rem, 3vw, 1.6rem)', right: 'clamp(1rem, 3vw, 1.6rem)', bottom: 'clamp(1rem, 2.5vw, 1.4rem)', color: '#fff' }}>
+          <div className="text-white" style={{ position: 'absolute', left: 'clamp(1rem, 3vw, 1.6rem)', right: 'clamp(1rem, 3vw, 1.6rem)', bottom: 'clamp(1rem, 2.5vw, 1.4rem)' }}>
             <div style={{ display: 'flex', gap: '.4rem', flexWrap: 'wrap', marginBottom: '.5rem' }}>
               <span
+                className="text-ink rounded-[20px]"
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -178,14 +171,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   letterSpacing: '.08em',
                   textTransform: 'uppercase',
                   background: 'rgba(255,255,255,.9)',
-                  color: 'var(--text)',
                   padding: '.25rem .5rem',
-                  borderRadius: 20,
                 }}
               >
                 {project.category}
               </span>
               <span
+                className="text-white rounded-[20px]"
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -193,18 +185,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   fontSize: '.62rem',
                   fontWeight: 700,
                   padding: '.25rem .55rem',
-                  borderRadius: 20,
                   background: statusColor(project.status),
-                  color: '#fff',
                 }}
               >
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff', display: 'inline-block' }} />
+                <span className="rounded-full bg-white" style={{ width: 6, height: 6, display: 'inline-block' }} />
                 {project.status} · {project.progress}%
               </span>
             </div>
             <h1
+              className="font-serif"
               style={{
-                fontFamily: 'var(--font-serif)',
                 fontSize: 'clamp(1.5rem, 3vw, 2.1rem)',
                 fontWeight: 500,
                 letterSpacing: '-.03em',
@@ -231,24 +221,24 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               { label: 'Updated', value: project.updated, extra: null },
               { label: 'Progress', value: `${project.progress}%`, extra: null },
             ].map(s => (
-              <div key={s.label} style={{ background: 'var(--bg-sunken)', borderRadius: 10, padding: '.75rem .85rem' }}>
-                <span style={{ fontSize: '.6rem', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700, color: 'var(--text-tertiary)' }}>{s.label}</span>
+              <div key={s.label} className="bg-sunken rounded-[10px]" style={{ padding: '.75rem .85rem' }}>
+                <span className="text-tertiary" style={{ fontSize: '.6rem', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }}>{s.label}</span>
                 <strong style={{ display: 'block', fontSize: '.92rem', marginTop: '.15rem', letterSpacing: '-.01em' }}>{s.value}</strong>
-                {s.extra && <span style={{ fontSize: '.64rem', color: 'var(--text-tertiary)', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', padding: '.1rem .35rem', borderRadius: 20, display: 'inline-block', marginTop: '.25rem' }}>{s.extra}</span>}
+                {s.extra && <span className="text-tertiary bg-card border border-line-light rounded-[20px]" style={{ fontSize: '.64rem', padding: '.1rem .35rem', display: 'inline-block', marginTop: '.25rem' }}>{s.extra}</span>}
               </div>
             ))}
           </div>
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '.66rem', color: 'var(--text-tertiary)', marginBottom: '.3rem' }}>
+            <div className="text-tertiary" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '.66rem', marginBottom: '.3rem' }}>
               <span>Physical progress</span>
-              <strong style={{ color: 'var(--text)', fontSize: '.78rem' }}>{project.progress}%</strong>
+              <strong className="text-ink" style={{ fontSize: '.78rem' }}>{project.progress}%</strong>
             </div>
-            <div className="progress-track" style={{ height: 8, borderRadius: 20 }}>
-              <span style={{ width: `${project.progress}%`, background: statusColor(project.status), borderRadius: 20 }} />
+            <div className="progress-track rounded-[20px]" style={{ height: 8 }}>
+              <span className="rounded-[20px]" style={{ width: `${project.progress}%`, background: statusColor(project.status) }} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '.45rem' }}>
               <StatusBadge status={project.status} />
-              <span style={{ fontSize: '.64rem', color: 'var(--text-tertiary)' }}>{project.category} · {project.ministry}</span>
+              <span className="text-tertiary" style={{ fontSize: '.64rem' }}>{project.category} · {project.ministry}</span>
             </div>
           </div>
         </div>
@@ -261,8 +251,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             <p className="eyebrow" style={{ margin: 0 }}>
               OVERVIEW
             </p>
-            <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: '1.15rem', margin: '.2rem 0 0' }}>About this project</h2>
-            <p style={{ marginTop: '.6rem', fontSize: '.84rem', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
+            <h2 className="font-serif" style={{ fontWeight: 500, fontSize: '1.15rem', margin: '.2rem 0 0' }}>About this project</h2>
+            <p className="text-secondary" style={{ marginTop: '.6rem', fontSize: '.84rem', lineHeight: 1.7 }}>
               {project.description || 'No description available for this project.'}
             </p>
           </section>
@@ -270,42 +260,42 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           {project.gallery && project.gallery.length > 0 && (
             <section className="panel">
               <p className="eyebrow" style={{ margin: 0 }}>GALLERY</p>
-              <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: '1.1rem', margin: '.2rem 0 0' }}>Project gallery</h2>
+              <h2 className="font-serif" style={{ fontWeight: 500, fontSize: '1.1rem', margin: '.2rem 0 0' }}>Project gallery</h2>
               <p className="muted" style={{ marginTop: '.25rem' }}>Photos from Wikimedia / official sources · click to open</p>
               <div style={{ display: 'flex', gap: '.5rem', marginTop: '.75rem', overflowX: 'auto', paddingBottom: 4 }}>
                 {project.gallery.map(src => (
                   <a key={src} href={src} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>
-                    <img src={src} alt="" style={{ width: 160, height: 110, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border-light)', display: 'block' }} loading="lazy" />
+                    <img src={src} alt="" className="rounded-[8px] border border-line-light" style={{ width: 160, height: 110, objectFit: 'cover', display: 'block' }} loading="lazy" />
                   </a>
                 ))}
               </div>
             </section>
           )}
 
-          {/* Updates & Timeline — like GovTrack */}
+          {/* Updates & Timeline - like GovTrack */}
           <section className="panel">
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
               <div>
                 <p className="eyebrow" style={{ margin: 0 }}>UPDATES & TIMELINE</p>
-                <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: '1.1rem', margin: '.2rem 0 0' }}>Updates & timeline</h2>
+                <h2 className="font-serif" style={{ fontWeight: 500, fontSize: '1.1rem', margin: '.2rem 0 0' }}>Updates & timeline</h2>
                 <p className="muted" style={{ marginTop: '.25rem' }}>Milestones, alerts, and news from the project timeline.</p>
               </div>
-              <span style={{ fontSize: '.62rem', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', background: 'var(--bg-sunken)', border: '1px solid var(--border-light)', padding: '.25rem .5rem', borderRadius: 20, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+              <span className="bg-sunken border border-line-light rounded-[20px] text-tertiary" style={{ fontSize: '.62rem', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', padding: '.25rem .5rem', whiteSpace: 'nowrap' }}>
                 {getTimeline(project).length} updates
               </span>
             </div>
             <div style={{ position: 'relative', marginTop: '.85rem', paddingLeft: 28 }}>
-              <div style={{ position: 'absolute', left: 13, top: 6, bottom: 6, width: 2, background: 'var(--border-light)', borderRadius: 1 }} />
+              <div className="rounded-[1px]" style={{ position: 'absolute', left: 13, top: 6, bottom: 6, width: 2, background: 'var(--border-light)' }} />
               {getTimeline(project).map(u => {
                 const meta = updateMeta(u.type)
                 const Icon = meta.Icon
                 return (
                   <div key={`${u.date}-${u.title}`} style={{ display: 'flex', gap: '.75rem', position: 'relative', marginBottom: '.85rem' }}>
                     <span
+                      className="rounded-full"
                       style={{
                         width: 28,
                         height: 28,
-                        borderRadius: '50%',
                         background: meta.bg,
                         color: meta.color,
                         display: 'grid',
@@ -317,18 +307,18 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                     >
                       <Icon size={13} />
                     </span>
-                    <div style={{ flex: 1, background: 'var(--bg-sunken)', border: '1px solid var(--border-light)', borderRadius: 10, padding: '.65rem .75rem' }}>
+                    <div className="bg-sunken border border-line-light rounded-[10px]" style={{ flex: 1, padding: '.65rem .75rem' }}>
                       <div style={{ display: 'flex', gap: '.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <span style={{ fontSize: '.6rem', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '.15rem .4rem', borderRadius: 20, background: meta.bg, color: meta.color, border: `1px solid ${meta.color}14` }}>
+                        <span className="rounded-[20px]" style={{ fontSize: '.6rem', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', padding: '.15rem .4rem', background: meta.bg, color: meta.color, border: `1px solid ${meta.color}14` }}>
                           {u.type}
                         </span>
-                        <span style={{ fontSize: '.64rem', color: 'var(--text-tertiary)' }}>{u.date}</span>
-                        <span style={{ marginLeft: 'auto', fontSize: '.6rem', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', gap: '.25rem' }}>
+                        <span className="text-tertiary" style={{ fontSize: '.64rem' }}>{u.date}</span>
+                        <span className="text-tertiary" style={{ marginLeft: 'auto', fontSize: '.6rem', display: 'inline-flex', alignItems: 'center', gap: '.25rem' }}>
                           {project.source} <ExternalLink size={10} />
                         </span>
                       </div>
                       <strong style={{ display: 'block', fontSize: '.8rem', marginTop: '.3rem', lineHeight: 1.3 }}>{u.title}</strong>
-                      <p style={{ margin: '.25rem 0 0', fontSize: '.72rem', lineHeight: 1.55, color: 'var(--text-secondary)' }}>{u.text}</p>
+                      <p className="text-secondary" style={{ margin: '.25rem 0 0', fontSize: '.72rem', lineHeight: 1.55 }}>{u.text}</p>
                     </div>
                   </div>
                 )
@@ -339,21 +329,20 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           {/* Completion note if present */}
           {project.completionNote && (
             <section
+              className="bg-primary-50 rounded-lg"
               style={{
-                background: 'var(--primary-50)',
                 border: '1px solid rgba(13,124,95,.14)',
-                borderRadius: 'var(--radius-lg)',
                 padding: '1.1rem 1.2rem',
                 display: 'flex',
                 gap: '.7rem',
               }}
             >
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--primary)', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+              <div className="rounded-[8px] bg-primary text-white" style={{ width: 32, height: 32, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
                 <Check size={16} />
               </div>
               <div>
-                <strong style={{ display: 'block', fontSize: '.82rem', color: 'var(--primary)' }}>How it got done</strong>
-                <p style={{ margin: '.3rem 0 0', fontSize: '.78rem', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{project.completionNote}</p>
+                <strong className="text-primary" style={{ display: 'block', fontSize: '.82rem' }}>How it got done</strong>
+                <p className="text-secondary" style={{ margin: '.3rem 0 0', fontSize: '.78rem', lineHeight: 1.6 }}>{project.completionNote}</p>
               </div>
             </section>
           )}
@@ -363,7 +352,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             <p className="eyebrow" style={{ margin: 0 }}>
               IMPLEMENTATION
             </p>
-            <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: '1.15rem', margin: '.2rem 0 0' }}>Implementation checklist</h2>
+            <h2 className="font-serif" style={{ fontWeight: 500, fontSize: '1.15rem', margin: '.2rem 0 0' }}>Implementation checklist</h2>
             <p className="muted" style={{ marginTop: '.25rem' }}>Milestones mapped from the latest published progress record.</p>
             <div className="checklist" style={{ marginTop: '.75rem' }}>
               {project.checklist.map(item => (
@@ -371,8 +360,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   <ChecklistIcon state={item.state} />
                   <div style={{ minWidth: 0 }}>
                     <strong style={{ fontSize: '.8rem' }}>{item.label}</strong>
-                    <p style={{ margin: '.15rem 0', fontSize: '.7rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{item.note}</p>
-                    <small style={{ fontSize: '.64rem', color: 'var(--text-tertiary)', background: 'var(--bg-sunken)', padding: '.12rem .4rem', borderRadius: 4 }}>{item.date}</small>
+                    <p className="text-secondary" style={{ margin: '.15rem 0', fontSize: '.7rem', lineHeight: 1.5 }}>{item.note}</p>
+                    <small className="text-tertiary bg-sunken rounded-[4px]" style={{ fontSize: '.64rem', padding: '.12rem .4rem' }}>{item.date}</small>
                   </div>
                   <StatusBadge status={item.state} />
                 </div>
@@ -383,23 +372,24 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
         {/* Sticky source card */}
         <aside className="detail-aside" style={{ position: 'sticky', top: 80, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-lg)', padding: '1.1rem', boxShadow: 'var(--shadow-sm)' }}>
+          <div className="bg-card border border-line-light rounded-lg shadow-sm" style={{ padding: '1.1rem' }}>
             <div style={{ display: 'flex', gap: '.6rem' }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--bg-sunken)', display: 'grid', placeItems: 'center', color: 'var(--primary)', flexShrink: 0 }}>
+              <div className="rounded-[8px] bg-sunken text-primary" style={{ width: 32, height: 32, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
                 <FileText size={16} />
               </div>
               <div>
                 <strong style={{ display: 'block', fontSize: '.82rem' }}>Source evidence</strong>
-                <p style={{ margin: '.25rem 0 0', fontSize: '.72rem', lineHeight: 1.55, color: 'var(--text-secondary)' }}>
+                <p className="text-secondary" style={{ margin: '.25rem 0 0', fontSize: '.72rem', lineHeight: 1.55 }}>
                   Progress reported by {project.source}. Spending and budget figures are shown only where the published record provides a usable figure.
                 </p>
                 <p style={{ margin: '.6rem 0 0', fontSize: '.7rem' }}>
-                  <span style={{ color: 'var(--text-tertiary)' }}>Source:</span> <strong style={{ color: 'var(--text)' }}>{project.source}</strong>
+                  <span className="text-tertiary">Source:</span> <strong className="text-ink">{project.source}</strong>
                 </p>
                 <a
                   href={project.sourceUrl}
                   target="_blank"
                   rel="noreferrer"
+                  className="text-primary bg-primary-50 rounded-[6px]"
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -407,25 +397,22 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                     marginTop: '.55rem',
                     fontSize: '.74rem',
                     fontWeight: 600,
-                    color: 'var(--primary)',
-                    background: 'var(--primary-50)',
                     padding: '.45rem .65rem',
-                    borderRadius: 6,
                   }}
                 >
                   View official source <ExternalLink size={13} />
                 </a>
                 <div style={{ marginTop: '.75rem', display: 'flex', flexDirection: 'column', gap: '.4rem', fontSize: '.72rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Budget</span>
+                    <span className="text-tertiary">Budget</span>
                     <strong>{project.budget}</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Spent</span>
+                    <span className="text-tertiary">Spent</span>
                     <strong>{project.spent}</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Status</span>
+                    <span className="text-tertiary">Status</span>
                     <StatusBadge status={project.status} />
                   </div>
                 </div>
@@ -433,9 +420,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             </div>
           </div>
 
-           <div style={{ background: 'var(--bg-sunken)', borderRadius: 'var(--radius-lg)', padding: '1rem', border: '1px solid var(--border-light)' }}>
+           <div className="bg-sunken rounded-lg border border-line-light" style={{ padding: '1rem' }}>
             <strong style={{ display: 'block', fontSize: '.78rem' }}>Provenance</strong>
-            <p style={{ margin: '.35rem 0 0', fontSize: '.68rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            <p className="text-secondary" style={{ margin: '.35rem 0 0', fontSize: '.68rem', lineHeight: 1.5 }}>
               Physical progress is based on the latest published progress report ({project.updated}). Dates in the checklist reflect the most recent indexed update; earlier milestones should be verified against primary documents.
             </p>
           </div>
@@ -448,16 +435,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   .detail-grid { grid-template-columns: 1fr !important; }
   .detail-aside { position: static !important; }
 }`}</style>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '1rem' }}>
+      <div className="border-t border-line-light" style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1.5rem', paddingTop: '1rem' }}>
         {prev ? (
-          <Link href={`/projects/${slugify(prev.name)}`} style={{ display: 'flex', alignItems: 'center', gap: '.5rem', color: 'var(--text-secondary)', fontSize: '.78rem', fontWeight: 600 }}>
+          <Link href={`/projects/${slugify(prev.name)}`} className="text-secondary" style={{ display: 'flex', alignItems: 'center', gap: '.5rem', fontSize: '.78rem', fontWeight: 600 }}>
             <ArrowLeft size={14} /> {prev.name}
           </Link>
         ) : (
           <span />
         )}
         {next ? (
-          <Link href={`/projects/${slugify(next.name)}`} style={{ display: 'flex', alignItems: 'center', gap: '.5rem', color: 'var(--text-secondary)', fontSize: '.78rem', fontWeight: 600 }}>
+          <Link href={`/projects/${slugify(next.name)}`} className="text-secondary" style={{ display: 'flex', alignItems: 'center', gap: '.5rem', fontSize: '.78rem', fontWeight: 600 }}>
             {next.name} <ArrowRight size={14} />
           </Link>
         ) : (

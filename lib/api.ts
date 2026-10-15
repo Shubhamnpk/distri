@@ -3,13 +3,19 @@ import { fetchProjectNepalDistricts, fetchProjectNepalProjects } from './project
 import { getRelevantDatasets } from './opendatanepal'
 
 // Re-export new modules
-export { fetchNepseData, fetchNepseStocks, fetchNepseMarketSummary } from './nepse'
+export { fetchNepseData, fetchNepseStocks, fetchNepseMarketSummary, fetchNepseIndices, fetchNepseIndex, fetchNepseTopStocks, fetchNepseMarketStatus, fetchUpcomingIpos } from './nepse'
 export { fetchProjectNepalDistricts, fetchProjectNepalProjects } from './project-nepal'
 export { getRelevantDatasets, searchDatasets } from './opendatanepal'
 export { getNrbUsdRate, fetchLatestForex, fetchUsdNprSeries } from './nrb'
 export type { NrbForexRate, NrbForexDay } from './nrb'
 export { fetchDataNepalIndicators, fetchDataNepalPlaces, fetchDataNepalProvinces, fetchDataNepalGeography, fetchDataNepalDatasets } from './datanepal'
 export type { DataNepalIndicator, DataNepalPlace } from './datanepal'
+export { fetchBipadIncidents, fetchBipadAlerts, fetchBipadEarthquakes, fetchBipadLosses, fetchBipadProjects, fetchBipadRainStations, fetchBipadRiverStations, fetchBipadGeo } from './bipad'
+export { fetchDhmForecast, fetchDhmObservations, fetchDhmCountryForecast } from './dhm'
+export { fetchWbProjectCount, fetchWbProjects, wbProjectCommitment } from './wb-projects'
+export type { WbProject } from './wb-projects'
+export { fetchWhoNpl, searchWhoIndicators, WHO_CODES } from './who'
+export { fetchCurrentWeather, fetchCurrentPm25, fetchNepalQuakes, NEPAL_DISTRICT_CENTERS } from './meteo'
 
 // World Bank API
 const WB_BASE = 'https://api.worldbank.org/v2/country/NPL/indicator'
@@ -162,7 +168,7 @@ export async function fetchEconomyData(): Promise<EconomyData> {
 
 export const NPR_FALLBACK = 133.5
 export const INR_TO_NPR = 1.6
-// kept for backward compat — use getLiveNprRate() for live value
+// kept for backward compat - use getLiveNprRate() for live value
 export const NPR_RATE = NPR_FALLBACK
 
 let cachedNprRate: number | null = null

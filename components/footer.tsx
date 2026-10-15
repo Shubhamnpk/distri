@@ -17,13 +17,17 @@ export function Footer() {
             <div className="footer-col">
               <h4>Navigate</h4>
               <Link href="/">Overview</Link>
-              <Link href="/">Companies</Link>
-              <Link href="/">Projects</Link>
-              <Link href="/">Sources</Link>
+              <Link href="/companies">Companies</Link>
+              <Link href="/projects">Projects</Link>
+              <Link href="/procurement">Procurement</Link>
+              <Link href="/economy">Economy</Link>
+              <Link href="/environment">Environment</Link>
             </div>
             <div className="footer-col">
               <h4>Resources</h4>
               <Link href="/economy">Economy Data</Link>
+              <Link href="/datasets">Open datasets</Link>
+              <Link href="/sources">Source registry</Link>
               <a href="https://data.worldbank.org/country/nepal" target="_blank" rel="noreferrer">World Bank</a>
               <a href="https://www.nrb.org.np" target="_blank" rel="noreferrer">Nepal Rastra Bank</a>
             </div>

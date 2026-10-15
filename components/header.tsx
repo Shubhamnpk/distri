@@ -11,10 +11,9 @@ const navItems = [
   { href: '/', label: 'Home' },
   { href: '/companies', label: 'Companies' },
   { href: '/projects', label: 'Projects' },
-  { href: '/projects/map', label: 'Map' },
-  { href: '/datasets', label: 'Datasets' },
-  { href: '/sources', label: 'Sources' },
+  { href: '/procurement', label: 'Procurement' },
   { href: '/economy', label: 'Economy' },
+  { href: '/environment', label: 'Environment' },
 ]
 
 export function Header() {

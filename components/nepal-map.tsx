@@ -24,15 +24,15 @@ export function NepalMap({
   const nationalCount = counts['National'] ?? 0
 
   return (
-    <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-lg)', padding: '1rem 1.1rem', boxShadow: 'var(--shadow-sm)' }}>
+    <div style={{ padding: '1rem 1.1rem' }} className="bg-card border border-line-light rounded-lg shadow-sm">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '.6rem', flexWrap: 'wrap', gap: '.5rem' }}>
         <strong style={{ fontSize: '.82rem', letterSpacing: '-.02em' }}>Filter by province, click the map</strong>
-        <span style={{ fontSize: '.62rem', color: 'var(--text-tertiary)', background: 'var(--bg-sunken)', padding: '.2rem .5rem', borderRadius: 20 }}>
+        <span style={{ fontSize: '.62rem', padding: '.2rem .5rem' }} className="text-tertiary bg-sunken rounded-[20px]">
           {nationalCount} national projects shown in every province
         </span>
       </div>
 
-      <div style={{ position: 'relative', background: 'var(--bg-sunken)', borderRadius: 12, padding: '.5rem', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', padding: '.5rem', overflow: 'hidden' }} className="bg-sunken rounded-[12px]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <svg viewBox="0 0 1000 400" role="img" aria-label="Nepal provinces map" style={{ width: '100%', height: 'auto', display: 'block' }}>
           {/* subtle Nepal outline */}
@@ -90,17 +90,17 @@ export function NepalMap({
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.35rem', marginTop: '.75rem' }}>
-        <button onClick={() => onSelect('All')} className={selected === 'All' ? 'selected' : ''} style={{
-          padding: '.35rem .6rem', borderRadius: 6, fontSize: '.7rem', fontWeight: 600,
+        <button onClick={() => onSelect('All')} className={selected === 'All' ? 'selected border border-line-light rounded-[6px]' : 'border border-line-light rounded-[6px]'} style={{
+          padding: '.35rem .6rem', fontSize: '.7rem', fontWeight: 600,
           background: selected === 'All' ? 'var(--accent)' : 'var(--bg-sunken)', color: selected === 'All' ? '#fff' : 'var(--text-secondary)',
-          border: '1px solid var(--border-light)', cursor: 'pointer'
+          cursor: 'pointer'
         }}>
           All provinces
         </button>
-        <button onClick={() => onSelect('National')} className={selected === 'National' ? 'selected' : ''} style={{
-          padding: '.35rem .6rem', borderRadius: 6, fontSize: '.7rem', fontWeight: 600,
+        <button onClick={() => onSelect('National')} className={selected === 'National' ? 'selected border border-line-light rounded-[6px]' : 'border border-line-light rounded-[6px]'} style={{
+          padding: '.35rem .6rem', fontSize: '.7rem', fontWeight: 600,
           background: selected === 'National' ? 'var(--accent)' : 'var(--bg-sunken)', color: selected === 'National' ? '#fff' : 'var(--text-secondary)',
-          border: '1px solid var(--border-light)', cursor: 'pointer'
+          cursor: 'pointer'
         }}>
           National ({nationalCount})
         </button>
@@ -109,17 +109,18 @@ export function NepalMap({
             key={p.id}
             onClick={() => onSelect(p.id)}
             style={{
-              padding: '.35rem .6rem', borderRadius: 6, fontSize: '.7rem', fontWeight: 600,
+              padding: '.35rem .6rem', fontSize: '.7rem', fontWeight: 600,
               background: selected === p.id ? 'var(--accent)' : 'var(--bg-sunken)', color: selected === p.id ? '#fff' : 'var(--text-secondary)',
-              border: '1px solid var(--border-light)', cursor: 'pointer'
+              cursor: 'pointer'
             }}
+            className="border border-line-light rounded-[6px]"
           >
             {p.label} ({counts[p.id] ?? 0})
           </button>
         ))}
       </div>
 
-      <p style={{ margin: '.6rem 0 0', fontSize: '.62rem', color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+      <p style={{ margin: '.6rem 0 0', fontSize: '.62rem', lineHeight: 1.5 }} className="text-tertiary">
         National projects span multiple provinces and appear in every filter. Heritage & conservation sites cluster in Bagmati.
       </p>
     </div>

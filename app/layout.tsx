@@ -9,15 +9,11 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 
 export const metadata: Metadata = {
-  title: 'Drishti — Nepal Public Accountability',
+  title: 'Drishti - Nepal Public Accountability',
   description: 'Track government-owned companies and public infrastructure projects across Nepal. Financial details, progress reports, and evidence from public records.',
   generator: 'v0.app',
   icons: {
-    icon: [
-      { url: '/icon.svg', type: 'image/svg+xml' },
-      { url: '/icon-light-32x32.png', media: '(prefers-color-scheme: light)' },
-      { url: '/icon-dark-32x32.png', media: '(prefers-color-scheme: dark)' },
-    ],
+    icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
     apple: '/apple-icon.png',
   },
 }

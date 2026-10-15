@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { Search, Database, ExternalLink, Building2, FolderKanban, Globe2, Filter } from 'lucide-react'
 import { searchDatasets } from '@/lib/opendatanepal'
+import { fetchDataNepalDatasets, fetchDataNepalIndicators, fetchDataNepalPlaces } from '@/lib/datanepal'
+import type { DataNepalDataset } from '@/lib/datanepal'
 import type { CkanDataset } from '@/lib/types'
 
 const CATEGORIES = [
@@ -18,6 +20,17 @@ export default function DatasetsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [error, setError] = useState<string | null>(null)
+  const [dn, setDn] = useState<{ datasets: DataNepalDataset[]; indicators: number; places: number } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([fetchDataNepalDatasets(), fetchDataNepalIndicators(), fetchDataNepalPlaces()])
+      .then(([datasets, indicators, places]) => {
+        if (!cancelled) setDn({ datasets, indicators: indicators.length, places: places.length })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     const loadDatasets = async () => {
@@ -99,7 +112,7 @@ export default function DatasetsPage() {
           </div>
         ) : error ? (
           <div style={{ padding: '2rem', textAlign: 'center' }}>
-            <p className="muted" style={{ color: 'var(--danger)' }}>{error}</p>
+            <p className="muted text-danger">{error}</p>
             <button 
               className="outline-button" 
               onClick={() => window.location.reload()}
@@ -146,15 +159,41 @@ export default function DatasetsPage() {
                     {dataset.metadata_modified ? new Date(dataset.metadata_modified).toLocaleDateString() : 'N/A'}
                   </strong>
                 </div>
-                <ExternalLink size={14} style={{ color: 'var(--text-tertiary)' }} />
+                <ExternalLink size={14} className="text-tertiary" />
               </a>
             ))}
           </div>
         )}
 
-        <div style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)' }}>
-          <h3 style={{ fontSize: '.9rem', fontWeight: 600, marginBottom: '.5rem' }}>About Open Data Nepal</h3>
-          <p style={{ fontSize: '.75rem', color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>
+        {dn && dn.datasets.length > 0 && (
+          <div className="bg-sunken border border-line-light rounded-md" style={{ marginTop: '1.5rem', padding: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap' }}>
+              <Database size={15} className="text-primary" />
+              <h3 style={{ fontSize: '.9rem', fontWeight: 600, margin: 0 }}>DataNepal open registry</h3>
+              <span className="text-tertiary bg-card border border-line-light rounded-[20px]" style={{ fontSize: '.64rem', padding: '.15rem .5rem' }}>
+                {dn.datasets.length} datasets · {dn.indicators} indicators · {dn.places} places
+              </span>
+              <a href="https://datanepal.org/datasets/" target="_blank" rel="noreferrer" className="text-button" style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '.25rem' }}>
+                Open registry <ExternalLink size={14} />
+              </a>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem', marginTop: '.75rem' }}>
+              {dn.datasets.slice(0, 6).map((d, i) => (
+                <div key={d.dataset_id ?? i} className="bg-card border border-line-light rounded-[8px]" style={{ display: 'flex', alignItems: 'center', gap: '.5rem', fontSize: '.74rem', padding: '.5rem .65rem' }}>
+                  <span className="bg-primary-50 text-primary rounded-[6px]" style={{ width: 20, height: 20, display: 'grid', placeItems: 'center', fontSize: '.62rem', fontWeight: 700, flexShrink: 0 }}>{i + 1}</span>
+                  <strong style={{ fontWeight: 600 }}>{String(d.title ?? d.dataset_id ?? 'Untitled dataset')}</strong>
+                  {d.dataset_id && <span className="text-tertiary" style={{ marginLeft: 'auto', fontSize: '.62rem', fontFamily: 'monospace' }}>{d.dataset_id}</span>}
+                </div>
+              ))}
+            </div>
+            <p className="text-tertiary" style={{ fontSize: '.66rem', lineHeight: 1.5, margin: '.6rem 0 0' }}>
+              Census 2021, ECN mirrors & WDI series repackaged as static JSON - no key, refreshed from primary sources. Powers the district hierarchy on the Projects tracker.
+            </p>
+          </div>
+        )}
+
+        <div className="bg-card border border-line-light rounded-md" style={{ marginTop: '1.5rem', padding: '1rem' }}>
+          <h3 style={{ fontSize: '.9rem', fontWeight: 600, marginBottom: '.5rem' }}>About Open Data Nepal</h3>          <p className="text-secondary" style={{ fontSize: '.75rem', lineHeight: 1.6, margin: 0 }}>
             Open Data Nepal hosts datasets from 51 publishing organizations. Most are available in CSV format, some queryable via the DataStore API. Data covers industry registrations, foreign direct investment, hydropower projects, government budgets, and more.
           </p>
           <a

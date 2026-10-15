@@ -52,20 +52,17 @@ export function Logo({ size = 32, showText = true }: LogoProps) {
       </svg>
       {showText && (
         <div style={{ lineHeight: 1.1 }}>
-          <strong style={{
-            fontFamily: 'var(--font-serif)',
+          <strong className="font-serif text-ink" style={{
             fontSize: '1.35rem',
             letterSpacing: '-.04em',
-            color: 'var(--text)',
           }}>
             Drishti
           </strong>
-          <small style={{
+          <small className="text-tertiary" style={{
             display: 'block',
             fontSize: '.52rem',
             letterSpacing: '.2em',
             textTransform: 'uppercase',
-            color: 'var(--text-tertiary)',
             marginTop: '1px',
           }}>
             Nepal Accountability

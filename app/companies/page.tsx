@@ -1,8 +1,7 @@
 'use client'
 
 import { Suspense, useMemo, useState } from 'react'
-import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, ChevronRight, TrendingUp, TrendingDown, Eye } from 'lucide-react'
 import { StatusBadge } from '@/components/shared'
 import { DetailDrawer } from '@/components/detail-drawer'
@@ -13,7 +12,8 @@ import type { Company } from '@/lib/types'
 
 const OP_FILTERS = ['All', 'Operating', 'Closed', 'Not yet operational'] as const
 const SECTORS = [...new Set(companies.map(c => c.sector))].sort()
-const COMPANY_SORTS = ['Profit first', 'Name A–Z', 'Revenue ↓', 'Revenue ↑'] as const
+
+type SortKey = 'profit' | 'name' | 'revenue' | 'result' | 'status'
 
 function parseRevenueCr(rev: string): number | null {
   if (!rev || rev === 'Unavailable' || rev === 'N/A') return null
@@ -22,63 +22,77 @@ function parseRevenueCr(rev: string): number | null {
 
 function CompaniesContent() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const [query, setQuery] = useState(searchParams.get('q') ?? '')
   const [opFilter, setOpFilter] = useState<(typeof OP_FILTERS)[number]>('All')
   const [sectorFilter, setSectorFilter] = useState('All')
-  const [sort, setSort] = useState<(typeof COMPANY_SORTS)[number]>('Profit first')
+  const [sortKey, setSortKey] = useState<SortKey>('profit')
+  const [sortDir, setSortDir] = useState<1 | -1>(1)
   const [selected, setSelected] = useState<Company | null>(null)
   const [quarter, setQuarter] = useState('Q1')
 
+  const toggleSort = (key: Exclude<SortKey, 'profit'>) => {
+    if (sortKey === key) {
+      setSortDir(d => (d === 1 ? -1 : 1))
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'name' ? 1 : -1)
+    }
+  }
+
   const filtered = useMemo(() => {
-    let base = companies.filter(
+    const base = companies.filter(
       x =>
         (opFilter === 'All' || x.operatingStatus === opFilter) &&
         (sectorFilter === 'All' || x.sector === sectorFilter) &&
         `${x.name} ${x.sector}`.toLowerCase().includes(query.toLowerCase())
     )
-    if (sort === 'Name A–Z') return [...base].sort((a, b) => a.name.localeCompare(b.name))
-    if (sort === 'Revenue ↓' || sort === 'Revenue ↑') {
-      return [...base].sort((a, b) => {
-        const av = parseRevenueCr(a.revenue) ?? -1
-        const bv = parseRevenueCr(b.revenue) ?? -1
-        return sort === 'Revenue ↓' ? bv - av : av - bv
-      })
+    const dir = sortDir
+    const by: Record<SortKey, (a: Company, b: Company) => number> = {
+      profit: (a, b) => (a.resultType === b.resultType ? a.name.localeCompare(b.name) : a.resultType === 'up' ? -1 : 1),
+      name: (a, b) => a.name.localeCompare(b.name),
+      revenue: (a, b) => (parseRevenueCr(a.revenue) ?? -1) - (parseRevenueCr(b.revenue) ?? -1),
+      result: (a, b) => (a.resultType === b.resultType ? a.result.localeCompare(b.result) : a.resultType === 'up' ? -1 : 1),
+      status: (a, b) => a.operatingStatus.localeCompare(b.operatingStatus),
     }
-    // profitable first (stable)
-    return [...base].sort((a, b) => {
-      if (a.resultType === b.resultType) return 0
-      return a.resultType === 'up' ? -1 : 1
-    })
-  }, [query, opFilter, sectorFilter, sort])
+    return [...base].sort((a, b) => by[sortKey](a, b) * dir)
+  }, [query, opFilter, sectorFilter, sortKey, sortDir])
 
   const profitableCount = companies.filter(c => c.resultType === 'up').length
   const lossCount = companies.filter(c => c.resultType === 'down').length
 
   return (
     <div className="content-wrap">
-      <section className="full-panel panel">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">GOVERNMENT-OWNED COMPANIES</p>
-            <h2>Company financials</h2>
-          </div>
-          <span className="muted" style={{ fontSize: '.68rem', whiteSpace: 'nowrap' }}>
+      {/* ── Hero ── */}
+      <div className="eco-hero" style={{ background: 'linear-gradient(135deg, #0b3d33 0%, #082b24 60%, #051d18 100%)' }}>
+        <p style={{ fontSize: '.6rem', letterSpacing: '.16em', fontWeight: 700, opacity: .7, margin: 0 }}>GOVERNMENT-OWNED COMPANIES</p>
+        <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.8rem, 3.5vw, 2.8rem)', fontWeight: 500, letterSpacing: '-.04em', margin: '.3rem 0 .4rem', lineHeight: 1.05 }}>
+          Who runs the nation&apos;s businesses?
+        </h1>
+        <p style={{ fontSize: '.82rem', opacity: .85, margin: 0, maxWidth: 560, lineHeight: 1.6 }}>
+          Annual and quarterly disclosures where publicly available. Green is profit, red is loss —
+          open a company for quarters, source evidence, and audit notes.
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', marginTop: '1.1rem', flexWrap: 'wrap' }}>
+          <span style={{ background: 'rgba(255,255,255,.14)', borderRadius: 20, padding: '.35rem .8rem', fontSize: '.7rem', fontWeight: 700 }}>
             {filtered.length} of {companies.length} shown
-            <span style={{ marginLeft: '.5rem', display: 'inline-flex', gap: '.35rem', verticalAlign: 'middle' }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.2rem', color: 'var(--primary)', fontWeight: 600 }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--primary)', display: 'inline-block' }} />
-                {profitableCount} profit
-              </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.2rem', color: 'var(--danger)', fontWeight: 600 }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--danger)', display: 'inline-block' }} />
-                {lossCount} loss
-              </span>
-            </span>
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.35rem', fontSize: '.7rem', fontWeight: 700 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4ade80', display: 'inline-block' }} />
+            {profitableCount} profit
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.35rem', fontSize: '.7rem', fontWeight: 700 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f87171', display: 'inline-block' }} />
+            {lossCount} loss
           </span>
         </div>
-        <p className="section-intro">
-          Annual and quarterly disclosures where publicly available. Profit vs loss is colour-coded: green for profit, red for loss. Open a company for quarters, source evidence, and audit notes.
-        </p>
+        <div style={{ display: 'flex', height: 8, borderRadius: 99, overflow: 'hidden', marginTop: '.7rem', background: 'rgba(255,255,255,.14)' }}>
+          <span style={{ width: `${(profitableCount / companies.length) * 100}%`, background: '#34d399' }} />
+          <span style={{ flex: 1, background: '#f87171', opacity: .85 }} />
+        </div>
+      </div>
+
+      <section className="full-panel panel">
         <NepseTicker />
 
         <div style={{ display: 'flex', gap: '.75rem', alignItems: 'center', flexWrap: 'wrap', marginTop: '.75rem' }}>
@@ -94,39 +108,19 @@ function CompaniesContent() {
           {query && (
             <button
               onClick={() => setQuery('')}
+              className="text-primary bg-primary-50 rounded-[6px]"
               style={{
                 fontSize: '.72rem',
-                color: 'var(--primary)',
                 fontWeight: 600,
-                background: 'var(--primary-50)',
                 padding: '.3rem .55rem',
-                borderRadius: 6,
               }}
             >
               Clear
             </button>
           )}
-          <select
-            aria-label="Sort companies"
-            value={sort}
-            onChange={e => setSort(e.target.value as typeof sort)}
-            style={{
-              marginLeft: 'auto',
-              fontSize: '.72rem',
-              fontWeight: 600,
-              padding: '.4rem .6rem',
-              borderRadius: 6,
-              border: '1px solid var(--border)',
-              background: 'var(--bg-elevated)',
-              color: 'var(--text-secondary)',
-            }}
-          >
-            {COMPANY_SORTS.map(s => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+          <span className="muted" style={{ marginLeft: 'auto', fontSize: '.68rem' }}>
+            Click a column heading to sort
+          </span>
         </div>
 
         <div className="quarter-tabs" style={{ marginTop: '.6rem', flexWrap: 'wrap' }}>
@@ -151,13 +145,11 @@ function CompaniesContent() {
 
         {filtered.length === 0 ? (
           <div
+            className="bg-sunken rounded-lg border border-dashed border-line"
             style={{
               marginTop: '1.5rem',
               padding: '2.5rem 1.5rem',
               textAlign: 'center',
-              background: 'var(--bg-sunken)',
-              borderRadius: 'var(--radius-lg)',
-              border: '1px dashed var(--border)',
             }}
           >
             <p style={{ margin: 0, fontWeight: 600, fontSize: '.85rem' }}>No companies match this filter.</p>
@@ -170,111 +162,120 @@ function CompaniesContent() {
                 setOpFilter('All')
                 setSectorFilter('All')
               }}
+              className="text-primary bg-card rounded-[6px] border border-primary"
               style={{
                 marginTop: '.75rem',
                 fontSize: '.72rem',
                 fontWeight: 600,
-                color: 'var(--primary)',
-                border: '1px solid var(--primary)',
                 padding: '.4rem .75rem',
-                borderRadius: 6,
-                background: 'var(--bg-elevated)',
               }}
             >
               Reset filters
             </button>
           </div>
         ) : (
-          <div className="data-table">
-            {filtered.map(c => {
-              const isProfit = c.resultType === 'up'
-              return (
-                <Link
-                  key={c.name}
-                  href={`/companies/${slugify(c.name)}`}
-                  className="data-row company-row"
-                  style={{
-                    gridTemplateColumns: '2.2fr 1fr 1.25fr auto 34px 20px',
-                    alignItems: 'center',
-                    textDecoration: 'none',
-                  }}
-                >
-                  <div className="entity">
-                    <CompanyLogo src={c.logo} alt={c.name} size={36} isProfit={isProfit} rounded={8} />
-                    <div style={{ minWidth: 0 }}>
-                      <strong style={{ display: 'block', fontSize: '.82rem', lineHeight: 1.2 }}>{c.name}</strong>
-                      <span style={{ display: 'block', fontSize: '.64rem', color: 'var(--text-tertiary)', marginTop: '.15rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {c.sector}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div style={{ minWidth: 0 }}>
-                    <small style={{ display: 'block', fontSize: '.6rem', color: 'var(--text-tertiary)', letterSpacing: '.04em', textTransform: 'uppercase' }}>
-                      Revenue · {c.year}
-                    </small>
-                    <strong style={{ display: 'block', fontSize: '.78rem', marginTop: '.1rem' }}>{c.revenue}</strong>
-                  </div>
-
-                  <div>
-                    <small style={{ display: 'block', fontSize: '.6rem', color: 'var(--text-tertiary)', letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: '.2rem' }}>
-                      Net result
-                    </small>
-                    <span
-                      className={isProfit ? 'positive' : 'negative'}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '.28rem',
-                        padding: '.22rem .5rem',
-                        borderRadius: 20,
-                        fontSize: '.74rem',
-                        fontWeight: 700,
-                        letterSpacing: '-.01em',
-                        background: isProfit ? 'var(--primary-50)' : 'var(--danger-light)',
-                        border: `1px solid ${isProfit ? 'rgba(13,124,95,.12)' : 'rgba(196,55,58,.12)'}`,
-                        lineHeight: 1,
-                      }}
+          <div style={{ overflowX: 'auto', marginTop: '1rem', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-elevated)' }}>
+            <table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse', fontSize: '.76rem' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: 'var(--text-tertiary)', fontSize: '.62rem', letterSpacing: '.06em', textTransform: 'uppercase', borderBottom: '1px solid var(--border-light)', background: 'var(--bg-sunken)' }}>
+                  {([
+                    ['Company', 'name'],
+                    ['Revenue', 'revenue'],
+                    ['Net result', 'result'],
+                    ['Status', 'status'],
+                  ] as [string, Exclude<SortKey, 'profit'>][]).map(([label, key]) => (
+                    <th key={key} style={{ padding: '.55rem .7rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      <button
+                        onClick={() => toggleSort(key)}
+                        aria-label={`Sort by ${label}`}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '.25rem', color: sortKey === key ? 'var(--accent)' : 'inherit', font: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', cursor: 'pointer' }}
+                      >
+                        {label}
+                        <span style={{ fontSize: '.6rem', opacity: sortKey === key ? 1 : .35 }}>
+                          {sortKey === key ? (sortDir === 1 ? '▲' : '▼') : '△'}
+                        </span>
+                      </button>
+                    </th>
+                  ))}
+                  <th style={{ padding: '.55rem .7rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                    <button
+                      onClick={() => { setSortKey('profit'); setSortDir(1) }}
+                      aria-label="Profit first"
+                      title="Profitable companies first"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '.25rem', color: sortKey === 'profit' ? 'var(--accent)' : 'inherit', font: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit', cursor: 'pointer' }}
                     >
-                      {isProfit ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                      {c.result}
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem', alignItems: 'flex-start' }}>
-                    <StatusBadge status={c.operatingStatus} />
-                  </div>
-
-                  <button
-                    type="button"
-                    aria-label={`Quick preview ${c.name}`}
-                    title="Quick preview"
-                    onClick={e => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      setSelected(c)
-                    }}
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 6,
-                      display: 'grid',
-                      placeItems: 'center',
-                      background: 'var(--bg-sunken)',
-                      color: 'var(--text-secondary)',
-                      border: '1px solid var(--border-light)',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Eye size={14} />
-                  </button>
-
-                  <span style={{ display: 'grid', placeItems: 'center', color: 'var(--text-tertiary)' }}>
-                    <ChevronRight size={16} />
-                  </span>
-                </Link>
-              )
-            })}
+                      Health
+                      <span style={{ fontSize: '.6rem', opacity: sortKey === 'profit' ? 1 : .35 }}>▲</span>
+                    </button>
+                  </th>
+                  <th style={{ width: 40 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(c => {
+                  const isProfit = c.resultType === 'up'
+                  return (
+                    <tr
+                      key={c.name}
+                      onClick={() => router.push(`/companies/${slugify(c.name)}`)}
+                      style={{ borderTop: '1px solid var(--border-light)', cursor: 'pointer' }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-sunken)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      <td style={{ padding: '.6rem .7rem' }}>
+                        <div className="entity">
+                          <CompanyLogo src={c.logo} alt={c.name} size={34} isProfit={isProfit} rounded={8} />
+                          <div style={{ minWidth: 0 }}>
+                            <strong style={{ display: 'block', fontSize: '.8rem', lineHeight: 1.25 }}>{c.name}</strong>
+                            <span className="text-tertiary" style={{ display: 'block', fontSize: '.62rem', marginTop: '.1rem' }}>
+                              {c.sector} · {c.year}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{ padding: '.6rem .7rem', fontWeight: 600, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{c.revenue}</td>
+                      <td style={{ padding: '.6rem .7rem' }}>
+                        <span
+                          className={`${isProfit ? 'positive' : 'negative'} rounded-[20px]`}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '.28rem', padding: '.22rem .5rem',
+                            fontSize: '.72rem', fontWeight: 700, whiteSpace: 'nowrap',
+                            background: isProfit ? 'var(--primary-50)' : 'var(--danger-light)',
+                            border: `1px solid ${isProfit ? 'rgba(13,124,95,.12)' : 'rgba(196,55,58,.12)'}`,
+                            lineHeight: 1,
+                          }}
+                        >
+                          {isProfit ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                          {c.result}
+                        </span>
+                      </td>
+                      <td style={{ padding: '.6rem .7rem' }}>
+                        <StatusBadge status={c.coverage} />
+                        <span className="text-tertiary" style={{ display: 'block', fontSize: '.6rem', marginTop: '.2rem' }}>{c.operatingStatus}</span>
+                      </td>
+                      <td style={{ padding: '.6rem .7rem' }}>
+                        <button
+                          type="button"
+                          aria-label={`Quick preview ${c.name}`}
+                          title="Quick preview"
+                          onClick={e => {
+                            e.stopPropagation()
+                            setSelected(c)
+                          }}
+                          className="bg-sunken text-secondary border border-line-light rounded-[6px]"
+                          style={{ width: 28, height: 28, display: 'grid', placeItems: 'center', flexShrink: 0 }}
+                        >
+                          <Eye size={14} />
+                        </button>
+                      </td>
+                      <td style={{ padding: '.6rem .7rem' }} className="text-tertiary">
+                        <ChevronRight size={16} />
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </section>
@@ -282,17 +283,6 @@ function CompaniesContent() {
       {selected && (
         <DetailDrawer selected={selected} quarter={quarter} onQuarterChange={setQuarter} onClose={() => setSelected(null)} />
       )}
-      <style>{`@media (max-width: 900px) {
-  .company-row { grid-template-columns: 1.8fr 1.2fr auto 34px 20px !important; }
-  .company-row > div:nth-child(2) { display: none !important; }
-}
-@media (max-width: 600px) {
-  .company-row { grid-template-columns: 1fr auto 34px 20px !important; }
-  .company-row > div:nth-child(4) { flex-direction: row !important; }
-}
-@media (max-width: 480px) {
-  .company-row > div:nth-child(4) { display: none !important; }
-}`}</style>
     </div>
   )
 }

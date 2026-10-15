@@ -36,14 +36,13 @@ export function CompanyLogo({
 
   return (
     <span
+      className="border border-line-light bg-white"
       style={{
         display: 'grid',
         placeItems: 'center',
         width: size,
         height: size,
         borderRadius: rounded,
-        background: '#fff',
-        border: '1px solid var(--border-light)',
         overflow: 'hidden',
         flexShrink: 0,
         position: 'relative',
@@ -68,7 +67,7 @@ export function CompanyLogo({
         loading="lazy"
         decoding="async"
         referrerPolicy="no-referrer"
-        style={{ position: 'relative', width: '100%', height: '100%', objectFit: 'contain', background: '#fff' }}
+        style={{ position: 'relative', width: '100%', height: '100%', objectFit: 'contain' }}
         onError={e => {
           ;(e.currentTarget as HTMLImageElement).style.display = 'none'
         }}
