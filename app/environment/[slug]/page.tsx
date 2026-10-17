@@ -30,9 +30,9 @@ function distanceKm(aLat: number, aLon: number, bLat: number, bLon: number): num
   return 2 * r * Math.asin(Math.sqrt(s))
 }
 
-/** Temperature with an honest source tag — model fallbacks are marked, never silent. */
+/** Temperature with an honest source tag - model fallbacks are marked, never silent. */
 function Val({ v, model = false }: { v: number | null | undefined; model?: boolean }) {
-  if (v == null) return <>—</>
+  if (v == null) return <>-</>
   return (
     <>{Math.round(v)}°{model && <small style={{ fontSize: '.58rem', fontWeight: 400, opacity: .65 }}> ·model</small>}</>
   )
@@ -161,7 +161,7 @@ export default function CityDetailPage() {
   const obsMaxModel = observed?.max_temperature == null && dMax0 != null
 
   // Every forecast day the API actually ships, labeled by its real calendar date
-  // (DHM numbers days from the issue date — entries are NOT always 1 and 2).
+  // (DHM numbers days from the issue date: entries are NOT always 1 and 2).
   const dayRows = useMemo(() => {
     const list = [...(city?.manual_forecast ?? [])].sort((a, b) => (a.day ?? 0) - (b.day ?? 0))
     return list.map(f => {
@@ -190,7 +190,7 @@ export default function CityDetailPage() {
       .slice(0, 6)
   }, [stations, city])
 
-  /** Incidents/alerts within 50 km, newest first — shared feed renders them. */
+  /** Incidents/alerts within 50 km, newest first - shared feed renders them. */
   const nearby = useMemo(() => {
     if (!city) return { incidents: [] as BipadIncident[], alerts: [] as BipadAlert[], distances: {} as Record<string, number> }
     const within = (p: { type: string; coordinates: [number, number] } | undefined): number | null => {
@@ -282,7 +282,7 @@ export default function CityDetailPage() {
             <div style={{ marginTop: '.6rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.6rem', fontWeight: 700, marginBottom: '.3rem' }}>
                 <span className="text-tertiary">Low {Math.round(obsMin)}°</span>
-                <span className="text-primary">Now {wx?.temperature_2m != null ? `${wx.temperature_2m.toFixed(1)}°` : '—'}</span>
+                <span className="text-primary">Now {wx?.temperature_2m != null ? `${wx.temperature_2m.toFixed(1)}°` : '-'}</span>
                 <span className="text-tertiary">High {Math.round(obsMax)}°</span>
               </div>
               <div style={{ height: 8, borderRadius: 99, background: 'var(--border-light)', position: 'relative' }}>

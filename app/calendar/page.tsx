@@ -74,14 +74,14 @@ export default function CalendarPage() {
       try {
         localStorage.setItem('drishti-likes', JSON.stringify(next))
       } catch {
-        // private mode — likes last for the session
+        // private mode - likes last for the session
       }
       return next
     })
   }
   const [ipoRaw, setIpoRaw] = useState<Awaited<ReturnType<typeof fetchUpcomingIpos>>>([])
 
-  // Gazette years are synchronous package data (currently only 2083 exists —
+  // Gazette years are synchronous package data (currently only 2083 exists -
   // other years resolve to [] instead of guessing).
   const festivals = useMemo(() => {
     const years = new Set<number>([bsNow.y, bsCursor.y])
@@ -285,7 +285,7 @@ export default function CalendarPage() {
               Days that move money.
             </h1>
             <p style={{ fontSize: '.82rem', opacity: .85, margin: 0, maxWidth: 480, lineHeight: 1.6 }}>
-              Festivals, public holidays, fiscal turns and IPO windows — plotted on the Nepali month so nothing tradable sneaks past.
+              Festivals, public holidays, fiscal turns and IPO windows - plotted on the Nepali month so nothing tradable sneaks past.
             </p>
             <div style={{ display: 'flex', gap: '.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
               <span style={{ background: 'rgba(255,255,255,.14)', borderRadius: 20, padding: '.35rem .8rem', fontSize: '.68rem', fontWeight: 700 }}>
@@ -316,7 +316,7 @@ export default function CalendarPage() {
                 </button>
               ))}
               {upcoming.length === 0 && (
-                <p style={{ margin: 0, fontSize: '.72rem', opacity: .7 }}>A quiet stretch — nothing on the books.</p>
+                <p style={{ margin: 0, fontSize: '.72rem', opacity: .7 }}>A quiet stretch - nothing on the books.</p>
               )}
             </div>
           </div>
@@ -382,7 +382,7 @@ export default function CalendarPage() {
                   <button
                     key={c.key}
                     onClick={() => { setSelected(c.date); setPanel('day') }}
-                    title={isHoliday ? 'Public holiday — offices closed' : undefined}
+                    title={isHoliday ? 'Public holiday - offices closed' : undefined}
                     style={{
                       minHeight: 62, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 2,
                       padding: 4, textAlign: 'left', cursor: 'pointer',
@@ -435,27 +435,27 @@ export default function CalendarPage() {
                 <p style={{ margin: 0, fontSize: '.68rem', fontWeight: 700 }}>Festivals & holidays</p>
                 <p style={{ margin: '.3rem 0 0', fontSize: '.66rem', lineHeight: 1.6 }} className="text-secondary">
                   <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#dc2626', marginRight: '.3rem' }} />
-                  <strong>Public holiday</strong> — offices closed, official notice
+                  <strong>Public holiday</strong> - offices closed, official notice
                 </p>
                 <p style={{ margin: '.25rem 0 0', fontSize: '.66rem', lineHeight: 1.6 }} className="text-secondary">
                   <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', marginRight: '.3rem' }} />
-                  <strong>Festival</strong> — Dashain, Tihar, Teej and daily observances
+                  <strong>Festival</strong> - Dashain, Tihar, Teej and daily observances
                 </p>
                 <p style={{ margin: '.25rem 0 0', fontSize: '.66rem', lineHeight: 1.6 }} className="text-secondary">
                   <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: 'var(--danger)', marginRight: '.3rem' }} />
-                  <strong>Sat–Sun weekend</strong> — weekly public holiday, market closed
+                  <strong>Sat–Sun weekend</strong> - weekly public holiday, market closed
                 </p>
               </div>
               <div>
                 <p style={{ margin: 0, fontSize: '.68rem', fontWeight: 700 }}>Money dates</p>
                 <p style={{ margin: '.3rem 0 0', fontSize: '.66rem', lineHeight: 1.6 }} className="text-secondary">
                   <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#8b5cf6', marginRight: '.3rem' }} />
-                  <strong>Fiscal</strong> — quarter ends, new year budgets
+                  <strong>Fiscal</strong> - quarter ends, new year budgets
                 </p>
                 <p style={{ margin: '.25rem 0 0', fontSize: '.66rem', lineHeight: 1.6 }} className="text-secondary">
                   <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#0ea5e9', marginRight: '.3rem' }} />
                   <strong>IPO opens</strong> · <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#f43f5e', marginRight: '.3rem' }} />
-                  <strong>closes</strong> — subscription windows
+                  <strong>closes</strong> - subscription windows
                 </p>
               </div>
             </div>
@@ -503,7 +503,7 @@ export default function CalendarPage() {
               </div>
               {selectedEvents.length === 0 ? (
                 <p style={{ padding: '.9rem 1rem', fontSize: '.74rem' }} className="bg-card border border-line-light rounded-lg text-tertiary">
-                  No events — a quiet day.
+                  No events - a quiet day.
                 </p>
               ) : (
                 <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '.45rem' }}>

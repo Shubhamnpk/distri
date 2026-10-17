@@ -245,7 +245,7 @@ export default function EconomyPage() {
   const tradeBalance = (expL?.value ?? 0) - (impL?.value ?? 0)
   const liveNprRate = data.exchangeRate.length ? (latest(data.exchangeRate)?.value ?? 133.5) : 133.5
 
-  // World Outlook — every IMF WEO series we have. A series the source can't
+  // World Outlook - every IMF WEO series we have. A series the source can't
   // supply is simply absent from /api/imf, so its card is never rendered.
   const fmtPct = (v: number) => `${v.toFixed(1)}%`
   const outlookCards: { icon: React.ElementType; label: string; d: WbDataPoint[]; color: string; fmt: (v: number) => string; unit: string }[] = [
@@ -429,7 +429,7 @@ export default function EconomyPage() {
           <article className="panel" style={{ marginBottom: '1rem' }}>
             <p className="eyebrow">03 · PEOPLE</p>
             <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: '1.3rem', margin: '.15rem 0 0' }}>Who the economy serves</h3>
-            <p className="muted" style={{ marginBottom: '.6rem' }}>Population, health, learning and work — click any card for the full series.</p>
+            <p className="muted" style={{ marginBottom: '.6rem' }}>Population, health, learning and work. Click any card for the full series.</p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem', alignItems: 'start', marginTop: '.6rem', marginBottom: '.7rem' }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '.5rem', marginBottom: '.5rem' }}>
@@ -441,7 +441,7 @@ export default function EconomyPage() {
                     { label: 'Per capita GDP', val: formatUsd(gdpPcL?.value ?? 0) },
                     { label: 'Per capita PPP', val: formatUsd(gdpPppL?.value ?? 0) },
                     { label: 'Unemployment', val: `${(unempL?.value ?? 0).toFixed(1)}%` },
-                    { label: 'Life expectancy', val: lifeL ? `${(lifeL.value ?? 0).toFixed(1)} yrs` : '—' },
+                    { label: 'Life expectancy', val: lifeL ? `${(lifeL.value ?? 0).toFixed(1)} yrs` : '-' },
                   ].map(item => (
                     <div key={item.label} style={{ padding: '.4rem', background: 'var(--bg-sunken)', borderRadius: '6px' }}>
                       <span style={{ fontSize: '.52rem', color: 'var(--text-tertiary)' }}>{item.label}</span>
@@ -496,10 +496,10 @@ export default function EconomyPage() {
             <article className="panel" style={{ marginBottom: '1rem' }}>
               <p className="eyebrow">05 · WORLD OUTLOOK · IMF FORECASTS TO {outlookYear}</p>
               <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: '1.3rem', margin: '.15rem 0 0' }}>What the world expects of Nepal</h3>
-              <p className="muted" style={{ marginBottom: '.6rem' }}>IMF World Economic Outlook — history plus projections beyond {latest(data.gdpGrowth)?.year}{imfSource ? ` · via ${imfSource}` : ''}. Click any card to explore.</p>
+              <p className="muted" style={{ marginBottom: '.6rem' }}>IMF World Economic Outlook: history plus projections beyond {latest(data.gdpGrowth)?.year}{imfSource ? ` · via ${imfSource}` : ''}. Click any card to explore.</p>
               <div className="grid-auto">
                 {outlook.map(c => (
-                  <TrendCard key={c.label} icon={c.icon} label={c.label} value={c.cur ? c.fmt(c.cur.value ?? 0) : '—'} unit={c.cur ? `${c.unit} · ${c.cur.year}${Number(c.cur.year) >= Number(CURRENT_YEAR) ? ' forecast' : ''}` : c.unit} data={c.d} spark={c.d.slice(-16)} delta={c.delta} color={c.color} wide onExpand={() => openModal({ label: `${c.label} (IMF)`, value: c.cur ? c.fmt(c.cur.value ?? 0) : '—', unit: `${c.unit}, incl. forecasts`, data: c.d, color: c.color, icon: c.icon })} />
+                  <TrendCard key={c.label} icon={c.icon} label={c.label} value={c.cur ? c.fmt(c.cur.value ?? 0) : '-'} unit={c.cur ? `${c.unit} · ${c.cur.year}${Number(c.cur.year) >= Number(CURRENT_YEAR) ? ' forecast' : ''}` : c.unit} data={c.d} spark={c.d.slice(-16)} delta={c.delta} color={c.color} wide onExpand={() => openModal({ label: `${c.label} (IMF)`, value: c.cur ? c.fmt(c.cur.value ?? 0) : '-', unit: `${c.unit}, incl. forecasts`, data: c.d, color: c.color, icon: c.icon })} />
                 ))}
               </div>
             </article>
@@ -576,12 +576,12 @@ export default function EconomyPage() {
                     <div style={{ marginTop: '1.2rem', borderTop: '1px solid var(--border-light)', paddingTop: '1rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.6rem' }}>
                       <div style={{ padding: '.7rem', background: 'var(--primary-50)', borderRadius: '10px' }}>
                         <span style={{ fontSize: '.6rem', color: 'var(--primary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em' }}>Highest</span>
-                        <strong style={{ display: 'block', fontSize: '1.1rem', margin: '.2rem 0 0', color: 'var(--primary)' }}>{high ? fmt(high.value ?? 0) : '—'}</strong>
+                        <strong style={{ display: 'block', fontSize: '1.1rem', margin: '.2rem 0 0', color: 'var(--primary)' }}>{high ? fmt(high.value ?? 0) : '-'}</strong>
                         <span style={{ fontSize: '.55rem', color: 'var(--text-tertiary)' }}>{high?.year}</span>
                       </div>
                       <div style={{ padding: '.7rem', background: 'var(--danger-light)', borderRadius: '10px' }}>
                         <span style={{ fontSize: '.6rem', color: 'var(--danger)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em' }}>Lowest</span>
-                        <strong style={{ display: 'block', fontSize: '1.1rem', margin: '.2rem 0 0', color: 'var(--danger)' }}>{low ? fmt(low.value ?? 0) : '—'}</strong>
+                        <strong style={{ display: 'block', fontSize: '1.1rem', margin: '.2rem 0 0', color: 'var(--danger)' }}>{low ? fmt(low.value ?? 0) : '-'}</strong>
                         <span style={{ fontSize: '.55rem', color: 'var(--text-tertiary)' }}>{low?.year}</span>
                       </div>
                     </div>

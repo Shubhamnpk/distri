@@ -11,6 +11,7 @@ const navItems = [
   { href: '/', label: 'Home' },
   { href: '/companies', label: 'Companies' },
   { href: '/projects', label: 'Projects' },
+  { href: '/map', label: 'Map' },
   { href: '/procurement', label: 'Procurement' },
   { href: '/economy', label: 'Economy' },
   { href: '/environment', label: 'Environment' },
@@ -26,7 +27,6 @@ export function Header() {
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/'
-    if (href === '/projects') return pathname === '/projects' || (pathname.startsWith('/projects/') && !pathname.startsWith('/projects/map'))
     return pathname === href || pathname.startsWith(href + '/')
   }
 
@@ -36,7 +36,7 @@ export function Header() {
   }
 
   // Full-bleed atlas route renders its own chrome.
-  if (pathname === '/projects/map') return null
+  if (pathname === '/map' || pathname === '/projects/map') return null
 
   return (
     <header className="topbar">

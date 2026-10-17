@@ -131,8 +131,8 @@ function CompaniesContent({ latestFinancials, nepseRanks }: { latestFinancials: 
           Who runs the nation&apos;s businesses?
         </h1>
         <p style={{ fontSize: '.82rem', opacity: .85, margin: 0, maxWidth: 560, lineHeight: 1.6 }}>
-          Annual and quarterly disclosures where publicly available. Green is profit, red is loss —
-          open a company for quarters, source evidence, and audit notes.
+          Annual and quarterly disclosures where publicly available. Green is profit, red is loss.
+          Open a company for quarters, source evidence, and audit notes.
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', marginTop: '1.1rem', flexWrap: 'wrap' }}>
           <span style={{ background: 'rgba(255,255,255,.14)', borderRadius: 20, padding: '.35rem .8rem', fontSize: '.7rem', fontWeight: 700 }}>

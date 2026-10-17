@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useState } from 'react'
 import { TrendingUp, TrendingDown, ExternalLink, Activity, BarChart3, ChevronDown, ChevronUp } from 'lucide-react'
@@ -142,7 +142,7 @@ export function NepseTicker() {
       </div>
       {!expanded && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.6rem', flexWrap: 'wrap', padding: '.55rem .7rem' }} className="bg-sunken rounded-[8px]">
-          <span style={{ fontSize: '.64rem' }} className="text-secondary">NEPSE Index <strong className="text-ink">{index ? index.close.toFixed(2) : '—'}</strong>
+          <span style={{ fontSize: '.64rem' }} className="text-secondary">NEPSE Index <strong className="text-ink">{index ? index.close.toFixed(2) : '-'}</strong>
             {index && <strong style={{ marginLeft: '.3rem' }} className={idxUp ? 'text-primary' : 'text-danger'}>{idxUp ? '+' : ''}{index.changePct.toFixed(2)}%</strong>}
           </span>
           <span style={{ fontSize: '.64rem' }} className="text-tertiary">{stocks.length} securities · {summary ? `Turnover ${formatNprAmount(summary.totalTurnover)}` : 'Live figures'}</span>

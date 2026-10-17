@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Waves, CalendarDays, MapPin } from 'lucide-react'
+import {
+  Waves, CalendarDays, MapPin, ArrowLeft, Zap, Building2, Activity, History,
+  AlertTriangle, CloudRain, SunMedium, Navigation, Landmark, TreePine,
+  Plus, Minus, RotateCcw, SlidersHorizontal, ChevronDown, X, Sun, Moon,
+  Maximize, Minimize,
+} from 'lucide-react'
 import { MapContainer, TileLayer, GeoJSON, CircleMarker, Marker, Popup, Tooltip, Pane, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { projects, slugify } from '@/lib/data'
@@ -22,10 +27,11 @@ import L from 'leaflet'
 import { fetchDhmForecast } from '@/lib/dhm'
 import { fetchBipadIncidents, fetchBipadRainStationsAll, fetchBipadRiverStationsAll } from '@/lib/bipad'
 import type { BipadIncident, BipadStation } from '@/lib/bipad'
+import { useTheme } from '@/components/theme-provider'
 
 const PROVINCES = ['Koshi', 'Madhesh', 'Bagmati', 'Gandaki', 'Lumbini', 'Karnali', 'Sudurpashchim'] as const
 
-/** Local geojson uses numeric ids 1–7 ("Province No. 1/2" for Koshi/Madhesh) — match by id, never by name. */
+/** Local geojson uses numeric ids 1–7 ("Province No. 1/2" for Koshi/Madhesh): match by id, never by name. */
 const PROVINCE_ID_TO_NAME: Record<number, string> = {
   1: 'Koshi', 2: 'Madhesh', 3: 'Bagmati', 4: 'Gandaki', 5: 'Lumbini', 6: 'Karnali', 7: 'Sudurpashchim',
 }
@@ -62,7 +68,7 @@ const HYDRO_HEADER: Record<HydroKind, string> = {
   survey: 'linear-gradient(135deg, #f59e0b 0%, #b45309 60%, #92400e 100%)',
 }
 
-/** Municipality border by palika class. Borders only — no fill — so the map
+/** Municipality border by palika class. Borders only (no fill) so the map
  *  underneath stays visible; the tint stays light so lines read without
  *  drowning the district. */
 const MUNI_TYPE_COLOR: Record<string, string> = {
@@ -252,7 +258,57 @@ function hash01(s: string): number {
 
 const NEPAL_BBOX: [[number, number], [number, number]] = [[26.2, 80.2], [30.4, 88.3]]
 
+type BasemapKey = 'topo' | 'satellite' | 'streets' | 'dark'
+
+const BASEMAPS: Record<BasemapKey, { name: string; url: string; attribution: string }> = {
+  topo: {
+    name: 'Topo',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri',
+  },
+  satellite: {
+    name: 'Satellite',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri, Maxar',
+  },
+  streets: {
+    name: 'Streets',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; CARTO &copy; OSM',
+  },
+  dark: {
+    name: 'Dark',
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; CARTO &copy; OSM',
+  },
+}
+
 type Layers = { projects: boolean; hydro: boolean; quakes: boolean; quakesPast: boolean; weather: boolean; incidents: boolean; munis: boolean; parks: boolean; roads: boolean; rain: boolean; rivers: boolean }
+
+function MapInstanceBridge({
+  onMapReady,
+  onMove,
+}: {
+  onMapReady: (map: L.Map) => void
+  onMove: (lat: number, lng: number, zoom: number) => void
+}) {
+  const map = useMap()
+  useEffect(() => {
+    onMapReady(map)
+    const handleMove = () => {
+      const c = map.getCenter()
+      onMove(c.lat, c.lng, map.getZoom())
+    }
+    map.on('move', handleMove)
+    map.on('zoomend', handleMove)
+    handleMove()
+    return () => {
+      map.off('move', handleMove)
+      map.off('zoomend', handleMove)
+    }
+  }, [map, onMapReady, onMove])
+  return null
+}
 
 function FitHelper({ bbox }: { bbox: [[number, number], [number, number]] | null }) {
   const map = useMap()
@@ -260,7 +316,7 @@ function FitHelper({ bbox }: { bbox: [[number, number], [number, number]] | null
   useEffect(() => {
     if (!bbox) return
     // No maxBounds on the map (free pan/zoom by design), so flights land
-    // exactly — nothing left to drag the view back toward center.
+    // exactly: nothing left to drag the view back toward center.
     map.flyToBounds(bbox, { padding: [60, 60], duration: first.current ? 0.1 : 1.2 })
     first.current = false
   }, [map, bbox])
@@ -278,7 +334,7 @@ function MuniFocus({ muni }: { muni: LocalMunicipality | null }) {
     try {
       const b = L.geoJSON(muni.feature as never).getBounds()
       if (b.isValid()) map.flyToBounds(b, { padding: [40, 40], maxZoom: 17, duration: 1 })
-    } catch { /* geometry unusable — stay put */ }
+    } catch { /* geometry unusable: stay put */ }
   }, [map, muni])
   return null
 }
@@ -289,7 +345,7 @@ function MapDeselect({ onEmptyClick }: { onEmptyClick: () => void }) {
   useEffect(() => {
     const handler = (e: { originalEvent: MouseEvent }) => {
       const t = e.originalEvent.target as HTMLElement | null
-      if (t?.closest?.('.leaflet-interactive, .leaflet-popup, .leaflet-control')) return
+      if (t?.closest?.('.leaflet-interactive, .leaflet-popup, .leaflet-control, .atlas-topbar, .atlas-bottom-controls, .atlas-station, .atlas-inspector, .atlas-legend-floating, .atlas-float')) return
       onEmptyClick()
     }
     map.on('click', handler as never)
@@ -307,7 +363,7 @@ function makeProvinceEach(selectProvince: (p: string) => void, selected: string 
     const props: { id?: number; name?: string } = f?.properties ?? {}
     const label: string = props.name ?? ''
     const target = (typeof props.id === 'number' && PROVINCE_ID_TO_NAME[props.id]) || null
-    // Outline only — a fill would hide the district boundaries underneath.
+    // Outline only: a fill would hide the district boundaries underneath.
     const base = () => {
       const isActive = target != null && target === selected
       return {
@@ -405,13 +461,97 @@ export function NationalMap() {
   const [layers, setLayers] = useState<Layers>({ projects: true, hydro: true, quakes: true, quakesPast: false, weather: false, incidents: false, munis: true, parks: true, roads: true, rain: false, rivers: false })
   const [quakeSel, setQuakeSel] = useState<NepalQuake | null>(null)
   const [muniSel, setMuniSel] = useState<LocalMunicipality | null>(null)
+  const [mapInstance, setMapInstance] = useState<L.Map | null>(null)
+  const [zoomLevel, setZoomLevel] = useState(7)
+  const [centerCoord, setCenterCoord] = useState<{ lat: number; lng: number }>({ lat: 28.4, lng: 84.2 })
+  const [basemap, setBasemap] = useState<BasemapKey>('topo')
+  const [isInspectorOpen, setIsInspectorOpen] = useState(false)
+  const [isLegendOpen, setIsLegendOpen] = useState(false)
+  const [isRegionMenuOpen, setIsRegionMenuOpen] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isLegendExpanded, setIsLegendExpanded] = useState(true)
+  const [gpsLoading, setGpsLoading] = useState(false)
+  const [gpsPosition, setGpsPosition] = useState<{ lat: number; lng: number; accuracy: number } | null>(null)
+  const [gpsError, setGpsError] = useState<string | null>(null)
+  const { theme, toggle: toggleTheme } = useTheme()
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {})
+      setIsFullscreen(true)
+    } else {
+      document.exitFullscreen().catch(() => {})
+      setIsFullscreen(false)
+    }
+  }
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(Boolean(document.fullscreenElement))
+    document.addEventListener('fullscreenchange', handler)
+    return () => document.removeEventListener('fullscreenchange', handler)
+  }, [])
+
+  const locateMe = () => {
+    if (!navigator.geolocation) {
+      setGpsError('Geolocation is not supported by your browser.')
+      return
+    }
+    // If we already have a position, clear it (toggle off)
+    if (gpsPosition) {
+      setGpsPosition(null)
+      setGpsError(null)
+      return
+    }
+    setGpsLoading(true)
+    setGpsError(null)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude: lat, longitude: lng, accuracy } = pos.coords
+        setGpsPosition({ lat, lng, accuracy })
+        setGpsLoading(false)
+        // Fly to user location
+        mapInstance?.flyTo([lat, lng], Math.max(13, zoomLevel), { duration: 1.2 })
+      },
+      (err) => {
+        setGpsLoading(false)
+        setGpsError(
+          err.code === err.PERMISSION_DENIED
+            ? 'Location access denied. Please allow location in browser settings.'
+            : err.code === err.TIMEOUT
+            ? 'Location request timed out.'
+            : 'Could not determine your location.',
+        )
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    )
+  }
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isRegionMenuOpen) setIsRegionMenuOpen(false)
+        else if (isInspectorOpen) setIsInspectorOpen(false)
+        else if (isLegendOpen) setIsLegendOpen(false)
+        else if (stationSel) setStationSel(null)
+        else if (hydroSel) setHydroSel(null)
+        else if (riverSel) setRiverSel(null)
+        else if (rainSel) setRainSel(null)
+        else if (quakeSel) setQuakeSel(null)
+        else if (muniSel) setMuniSel(null)
+        else if (district) setDistrict(null)
+        else if (province) selectProvince(null)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [isRegionMenuOpen, isInspectorOpen, isLegendOpen, stationSel, hydroSel, riverSel, rainSel, quakeSel, muniSel, district, province])
 
   useEffect(() => {
     let cancelled = false
     fetchProvinceShapes()
       .then(d => { if (!cancelled && d.features.length) setProvinceGeo(d) })
       .catch(() => {})
-    // District list first (tiny BIPAD payload, cached) — pins, zoom and
+    // District list first (tiny BIPAD payload, cached): pins, zoom and
     // filtering never wait on shapes. Shapes load lazily per province below.
     fetchBipadDistricts()
       .then(d => {
@@ -454,7 +594,7 @@ export function NationalMap() {
   )
 
   // Lazy shapes: only the opened province's file (~76–226KB), cached per
-  // province — never the whole country, never twice.
+  // province: never the whole country, never twice.
   useEffect(() => {
     if (!province) {
       setLocalDistricts([])
@@ -462,7 +602,7 @@ export function NationalMap() {
     }
     let cancelled = false
     const num = PROVINCE_NAME_TO_NUM[province]
-    // Clear the previous province's shapes immediately — never show stale districts.
+    // Clear the previous province's shapes immediately: never show stale districts.
     setLocalDistricts([])
     setLocalLoading(true)
     fetchLocalDistricts(num)
@@ -470,8 +610,8 @@ export function NationalMap() {
         if (cancelled) return
         setLocalDistricts(local)
         setPolyCount(local.length)
-        // Polygon-derived rows only when the API never answered — and only
-        // then, so a fallback can never pin one province over another.
+        // Polygon-derived rows only when the API never answered (and only
+        // then, so a fallback can never pin one province over another).
         if (!liveRef.current) {
           setDistricts(districtsFromPolygons(local))
           setDistrictsReady(true)
@@ -511,7 +651,7 @@ export function NationalMap() {
   const activeParks = useMemo(() => (activeKey ? parks.filter(m => m.district === activeKey) : []), [parks, activeKey])
   const muniByName = useMemo(() => new Map(munis.map(m => [m.name, m] as const)), [munis])
 
-  // A palika belongs to one district — drop the pick when the district changes.
+  // A palika belongs to one district: drop the pick when the district changes.
   useEffect(() => { setMuniSel(null) }, [district, province])
 
   const muniFeatures = useMemo(
@@ -576,7 +716,7 @@ export function NationalMap() {
       if (ds.length) provCentroid.set(p, { lat: ds.reduce((a, d) => a + d.lat, 0) / ds.length, lon: ds.reduce((a, d) => a + d.lon, 0) / ds.length })
     }
     return projects.map(p => {
-      // 1) Researched site (dam, airfield, temple — confidence labeled).
+      // 1) Researched site (dam, airfield, temple: confidence labeled).
       const site = projectSite(p.name)
       if (site) {
         return {
@@ -693,12 +833,22 @@ export function NationalMap() {
           minZoom={5}
           maxZoom={18}
           worldCopyJump={true}
-          style={{ height: '100%', width: '100%', background: '#eef2f0' }}
-          className={isNptDay() ? undefined : 'night-tiles'}
-          attributionControl={true}
-        >          <TileLayer
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"
-            attribution="Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics &amp; OpenStreetMap contributors"
+          zoomControl={false}
+          attributionControl={false}
+          style={{ height: '100%', width: '100%', background: basemap === 'dark' ? '#0a0f14' : '#eef2f0' }}
+          className={basemap === 'dark' ? undefined : (isNptDay() ? undefined : 'night-tiles')}
+        >
+          <TileLayer
+            key={basemap}
+            url={BASEMAPS[basemap].url}
+            attribution={BASEMAPS[basemap].attribution}
+          />
+          <MapInstanceBridge
+            onMapReady={setMapInstance}
+            onMove={(lat, lng, z) => {
+              setCenterCoord({ lat, lng })
+              setZoomLevel(z)
+            }}
           />
           <FitHelper bbox={fit ?? NEPAL_BBOX} />
           <MuniFocus muni={muniSel} />
@@ -929,17 +1079,326 @@ export function NationalMap() {
             )
           })}
         </MapContainer>
+        {/* GPS dot (outside Leaflet pane so it tracks but animates natively) */}
+        {gpsPosition && mapInstance && (() => {
+          const pt = mapInstance.latLngToContainerPoint([gpsPosition.lat, gpsPosition.lng])
+          return (
+            <div
+              style={{
+                position: 'absolute',
+                left: pt.x,
+                top: pt.y,
+                transform: 'translate(-50%, -50%)',
+                zIndex: 700,
+                pointerEvents: 'none',
+              }}
+            >
+              {/* Accuracy ring */}
+              <div
+                className="atlas-gps-ring"
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: 28,
+                  height: 28,
+                  background: 'rgba(37,99,235,.25)',
+                  border: '1.5px solid rgba(37,99,235,.45)',
+                }}
+              />
+              {/* Blue dot */}
+              <div style={{
+                position: 'relative',
+                width: 14,
+                height: 14,
+                borderRadius: '50%',
+                background: '#2563eb',
+                border: '2.5px solid #fff',
+                boxShadow: '0 2px 8px rgba(37,99,235,.5)',
+              }} />
+            </div>
+          )
+        })()}
       </div>
 
-      <div className="atlas-float atlas-legend" aria-hidden="true">
-        <span><i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#0d7c5f', marginRight: '.25rem' }} />Projects</span>
-        <span><i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#16a34a', marginRight: '.25rem' }} />Hydro operational</span>
-        <span><i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#2563eb', marginRight: '.25rem' }} />Hydro generation</span>
-        <span><i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#d97706', marginRight: '.25rem' }} />Hydro survey</span>
-        <span><i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#0ea5e9', marginRight: '.25rem' }} />Rain gauge</span>
-        <span><i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#dc2626', marginRight: '.25rem' }} />River level</span>
-        <span><i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', marginRight: '.25rem' }} />Tremors</span>
-      </div>
+      {/* Top Floating Control Bar */}
+      <header className="atlas-topbar">
+        {/* Left: Back Link & Region Selector */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <Link
+            href="/projects"
+            className="atlas-topbar-pill text-accent"
+            style={{ fontSize: '.74rem', fontWeight: 700, textDecoration: 'none', padding: '5px 10px', height: 34 }}
+            title="Return to Drishti Projects Tracker"
+          >
+            <ArrowLeft size={14} /> Drishti
+          </Link>
+
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setIsRegionMenuOpen(o => !o)}
+              className="atlas-topbar-pill text-ink"
+              style={{
+                fontSize: '.72rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                border: province ? '1.5px solid var(--accent)' : '1px solid var(--border-light)',
+                padding: '5px 11px',
+                height: 34,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+              }}
+              title="Click to select Province or District"
+            >
+              <MapPin size={13} className={province ? 'text-accent' : 'text-tertiary'} />
+              <span>{district ? `${province} › ${district}` : province ? `${province} Province` : 'Nepal (All)'}</span>
+              <ChevronDown size={13} className="text-tertiary" />
+            </button>
+
+            {isRegionMenuOpen && (
+              <div
+                className="atlas-float"
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  left: 0,
+                  width: 270,
+                  maxHeight: 380,
+                  overflowY: 'auto',
+                  padding: '.8rem',
+                  zIndex: 900,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '.6rem' }}>
+                  <span style={{ fontSize: '.58rem', fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase' }} className="text-tertiary">
+                    Select Jurisdiction
+                  </span>
+                  {(province || district) && (
+                    <button
+                      onClick={() => { selectProvince(null); setIsRegionMenuOpen(false); }}
+                      style={{ fontSize: '.64rem', fontWeight: 700, color: 'var(--accent)', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                    >
+                      Reset ✕
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => { selectProvince(null); setIsRegionMenuOpen(false); }}
+                  style={{
+                    width: '100%',
+                    padding: '.4rem .6rem',
+                    borderRadius: 8,
+                    fontSize: '.72rem',
+                    fontWeight: !province ? 700 : 500,
+                    background: !province ? 'var(--accent-light)' : 'transparent',
+                    color: !province ? 'var(--accent)' : 'var(--text)',
+                    cursor: 'pointer',
+                    border: 'none',
+                    textAlign: 'left',
+                    marginBottom: '.3rem',
+                  }}
+                >
+                  🇳🇵 All Nepal (Overview)
+                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
+                  {PROVINCES.map(p => {
+                    const isCurProv = province === p
+                    return (
+                      <div key={p}>
+                        <button
+                          onClick={() => {
+                            selectProvince(isCurProv ? null : p)
+                          }}
+                          style={{
+                            width: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '.35rem .6rem',
+                            borderRadius: 8,
+                            fontSize: '.72rem',
+                            fontWeight: isCurProv ? 700 : 500,
+                            background: isCurProv ? 'var(--accent-light)' : 'transparent',
+                            color: isCurProv ? 'var(--accent)' : 'var(--text)',
+                            cursor: 'pointer',
+                            border: 'none',
+                            textAlign: 'left',
+                          }}
+                        >
+                          <span>{p} Province</span>
+                          <span style={{ fontSize: '.6rem', color: 'var(--text-tertiary)' }}>
+                            {districts.filter(d => d.province === p).length} districts
+                          </span>
+                        </button>
+                        {isCurProv && provinceDistricts.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '.3rem .4rem .5rem 1rem' }}>
+                            {provinceDistricts.map(d => (
+                              <button
+                                key={d.id}
+                                onClick={() => {
+                                  setDistrict(cur => (cur === d.name ? null : d.name))
+                                  setIsRegionMenuOpen(false)
+                                }}
+                                style={{
+                                  fontSize: '.62rem',
+                                  fontWeight: district === d.name ? 700 : 500,
+                                  padding: '2px 7px',
+                                  borderRadius: 99,
+                                  border: '1px solid var(--border-light)',
+                                  background: district === d.name ? 'var(--accent)' : 'var(--bg-sunken)',
+                                  color: district === d.name ? '#fff' : 'var(--text-secondary)',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {d.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {(province || district) && (
+            <button
+              onClick={() => selectProvince(null)}
+              className="atlas-topbar-pill text-tertiary"
+              style={{ fontSize: '.68rem', fontWeight: 600, padding: '5px 8px', height: 34, cursor: 'pointer' }}
+              title="Reset view to whole country"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* Center: Layer Toggles */}
+        <div className="atlas-layer-bar">
+          {([
+            { key: 'hydro', label: 'Hydro', color: '#16a34a', count: counts.hydro },
+            { key: 'projects', label: 'Projects', color: '#0d7c5f', count: counts.projects },
+            { key: 'quakes', label: 'Tremors', color: '#f59e0b', count: counts.quakes },
+            { key: 'quakesPast', label: 'History', color: '#b45309', count: counts.quakesPast },
+            { key: 'incidents', label: 'Incidents', color: '#7c3aed', count: counts.incidents },
+            { key: 'rain', label: 'Rain', color: '#0ea5e9', count: counts.rain },
+            { key: 'rivers', label: 'Rivers', color: '#dc2626', count: counts.rivers },
+            { key: 'weather', label: 'Weather', color: '#2563eb', count: counts.weather },
+            { key: 'roads', label: 'Highways', color: '#b45309', count: counts.roads },
+            { key: 'munis', label: 'Palikas', color: '#94a3b8', count: district ? activeMunis.length : 0 },
+            { key: 'parks', label: 'Protected', color: '#0f766e', count: district ? activeParks.length : 0 },
+          ] as { key: keyof Layers; label: string; color: string; count: number }[]).map(({ key, label, color, count }) => {
+            const active = layers[key]
+            return (
+              <button
+                key={key}
+                onClick={() => toggle(key)}
+                className={`atlas-layer-chip ${active ? 'active' : 'inactive'}`}
+                style={{
+                  borderColor: active ? color : 'transparent',
+                }}
+                title={`${label} (${count}) · Click to toggle on/off`}
+              >
+                <span
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    background: color,
+                    flexShrink: 0,
+                    boxShadow: active ? `0 0 6px ${color}` : 'none',
+                  }}
+                />
+                <span>{label}</span>
+                <span
+                  style={{
+                    fontSize: '.62rem',
+                    fontWeight: 700,
+                    padding: '1px 5px',
+                    borderRadius: 99,
+                    background: active ? `${color}25` : 'var(--bg-sunken)',
+                    color: active ? color : 'var(--text-tertiary)',
+                  }}
+                >
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+
+          {layers.hydro && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '2px 3px', borderRadius: 99, background: 'var(--bg-sunken)', border: '1px solid var(--border-light)', marginLeft: 2 }}>
+              {(['all', 'operation', 'generation', 'survey'] as const).map(k => (
+                <button
+                  key={k}
+                  onClick={(e) => { e.stopPropagation(); setHydroKindFilter(k) }}
+                  style={{
+                    fontSize: '.58rem',
+                    fontWeight: hydroKindFilter === k ? 800 : 500,
+                    padding: '2px 6px',
+                    borderRadius: 99,
+                    cursor: 'pointer',
+                    border: 'none',
+                    background: hydroKindFilter === k ? (k === 'all' ? 'var(--accent)' : HYDRO_KIND_COLOR[k]) : 'transparent',
+                    color: hydroKindFilter === k ? '#fff' : 'var(--text-secondary)',
+                    transition: 'all 0.15s ease',
+                  }}
+                  title={k === 'all' ? 'All hydropower plants' : `${HYDRO_KIND_LABEL[k]} hydro`}
+                >
+                  {k === 'all' ? 'All' : k === 'operation' ? 'Op' : k === 'generation' ? 'Gen' : 'Surv'}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Right: Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <button
+            onClick={() => setIsInspectorOpen(o => !o)}
+            className={`atlas-topbar-pill ${isInspectorOpen ? 'text-accent' : 'text-ink'}`}
+            style={{
+              fontSize: '.72rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              border: isInspectorOpen ? '1.5px solid var(--accent)' : '1px solid var(--border-light)',
+              height: 34,
+              padding: '5px 11px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+            }}
+            title="Toggle projects & hydro data inspector"
+          >
+            <SlidersHorizontal size={14} className={isInspectorOpen ? 'text-accent' : 'text-secondary'} />
+            <span>Data ({visibleProjects.length})</span>
+          </button>
+
+          <button
+            onClick={toggleTheme}
+            className="atlas-topbar-pill text-ink"
+            style={{ width: 34, height: 34, padding: 0, justifyContent: 'center', cursor: 'pointer' }}
+            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            aria-label="Toggle theme"
+          >
+            {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
+
+          <button
+            onClick={toggleFullscreen}
+            className="atlas-topbar-pill text-ink"
+            style={{ width: 34, height: 34, padding: 0, justifyContent: 'center', cursor: 'pointer' }}
+            title={isFullscreen ? 'Exit full screen' : 'Full screen map'}
+            aria-label="Toggle full screen"
+          >
+            {isFullscreen ? <Minimize size={15} /> : <Maximize size={15} />}
+          </button>
+        </div>
+      </header>
 
       {stationSel && (
         <div className="atlas-float atlas-station">
@@ -961,7 +1420,7 @@ export function NationalMap() {
                 <WeatherIcon kind={skyKind(stationSel.condition)} size={54} night={!isNptDay()} />
                 <div>
                   <strong style={{ fontSize: '1.9rem', letterSpacing: '-.04em', lineHeight: 1, display: 'block' }}>
-                    {stationWx?.temperature_2m != null ? `${stationWx.temperature_2m.toFixed(1)}°C` : '—'}
+                    {stationWx?.temperature_2m != null ? `${stationWx.temperature_2m.toFixed(1)}°C` : '-'}
                   </strong>
                   <span style={{ fontSize: '.68rem' }} className="text-secondary">
                     {stationSel.condition ?? ''}{stationPm != null ? ` · PM2.5 ${stationPm.toFixed(1)}` : ''}
@@ -990,7 +1449,7 @@ export function NationalMap() {
                     <div key={d.day} className="signal" style={{ padding: '.5rem 0' }}>
                       <WeatherIcon kind={skyKind(d.weather?.name)} size={30} night={!isNptDay()} />
                       <div>
-                        <strong>{d.from_temperature ?? '—'}° / {d.to_temperature ?? '—'}°</strong>
+                        <strong>{d.from_temperature ?? '-'}° / {d.to_temperature ?? '-'}°</strong>
                         <p>{forecastDayLabel(d.day, undefined)} · {d.weather?.name ?? ''} · {d.rain_probability}% rain</p>
                       </div>
                     </div>
@@ -1077,7 +1536,7 @@ export function NationalMap() {
             </div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '.5rem', marginTop: '.6rem' }}>
               <strong style={{ fontSize: '2.1rem', letterSpacing: '-.04em', lineHeight: 1, color: RIVER_LEVEL_COLOR[lvl] }}>
-                {cur != null ? cur.toFixed(2) : '—'}
+                {cur != null ? cur.toFixed(2) : '-'}
               </strong>
               <span style={{ fontSize: '.7rem' }} className="text-secondary">m water level</span>
               <span style={{ marginLeft: 'auto', fontSize: '.58rem', fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', padding: '.2rem .45rem', borderRadius: 99, color: '#fff', background: RIVER_LEVEL_COLOR[lvl] }}>
@@ -1085,7 +1544,7 @@ export function NationalMap() {
               </span>
             </div>
             {pct != null && (
-              <div className="level-gauge" title={`Current ${cur} m · Warning ${warn ?? '—'} m · Danger ${dang} m`}>
+              <div className="level-gauge" title={`Current ${cur} m · Warning ${warn ?? '-'} m · Danger ${dang} m`}>
                 <span className="fill" style={{ width: `${pct}%`, background: RIVER_LEVEL_COLOR[lvl] }} />
                 {warnPct != null && <span className="mark" style={{ left: `${warnPct}%` }} />}
                 <span className="mark danger" style={{ left: '100%' }} />
@@ -1094,15 +1553,15 @@ export function NationalMap() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '.4rem', marginTop: '.6rem' }}>
               <div style={{ padding: '.5rem .55rem' }} className="bg-sunken rounded-[8px]">
                 <span style={{ fontSize: '.54rem', letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 700 }} className="text-tertiary">Warning</span>
-                <strong style={{ display: 'block', fontSize: '.74rem', marginTop: '.1rem' }}>{warn != null ? `${warn} m` : '—'}</strong>
+                <strong style={{ display: 'block', fontSize: '.74rem', marginTop: '.1rem' }}>{warn != null ? `${warn} m` : '-'}</strong>
               </div>
               <div style={{ padding: '.5rem .55rem' }} className="bg-sunken rounded-[8px]">
                 <span style={{ fontSize: '.54rem', letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 700 }} className="text-tertiary">Danger</span>
-                <strong style={{ display: 'block', fontSize: '.74rem', marginTop: '.1rem', color: 'var(--danger)' }}>{dang != null ? `${dang} m` : '—'}</strong>
+                <strong style={{ display: 'block', fontSize: '.74rem', marginTop: '.1rem', color: 'var(--danger)' }}>{dang != null ? `${dang} m` : '-'}</strong>
               </div>
               <div style={{ padding: '.5rem .55rem' }} className="bg-sunken rounded-[8px]">
                 <span style={{ fontSize: '.54rem', letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 700 }} className="text-tertiary">Trend</span>
-                <strong style={{ display: 'block', fontSize: '.74rem', marginTop: '.1rem' }}>{riverSel.steady ? riverSel.steady.toLowerCase() : '—'}</strong>
+                <strong style={{ display: 'block', fontSize: '.74rem', marginTop: '.1rem' }}>{riverSel.steady ? riverSel.steady.toLowerCase() : '-'}</strong>
               </div>
             </div>
             <p style={{ margin: '.6rem 0 0', fontSize: '.68rem' }} className="text-secondary">
@@ -1153,7 +1612,7 @@ export function NationalMap() {
             </div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '.5rem', marginTop: '.6rem' }}>
               <strong style={{ fontSize: '2.1rem', letterSpacing: '-.04em', lineHeight: 1, color: tone }}>
-                {head != null ? head.toFixed(1) : '—'}
+                {head != null ? head.toFixed(1) : '-'}
               </strong>
               <span style={{ fontSize: '.7rem' }} className="text-secondary">mm{headIv ? ` / ${headIv}h` : ''}</span>
               {anyDanger && (
@@ -1169,7 +1628,7 @@ export function NationalMap() {
                     <div key={iv} style={{ padding: '.45rem .25rem', textAlign: 'center' }} className="bg-sunken rounded-[8px]">
                       <span style={{ fontSize: '.52rem', fontWeight: 700 }} className="text-tertiary">{iv}h</span>
                       <strong style={{ display: 'block', fontSize: '.72rem', marginTop: '.1rem', color: danger ? 'var(--danger)' : undefined }}>
-                        {a?.value != null ? a.value.toFixed(1) : '—'}
+                        {a?.value != null ? a.value.toFixed(1) : '-'}
                       </strong>
                     </div>
                   )
@@ -1219,7 +1678,7 @@ export function NationalMap() {
             </div>
             <div style={{ padding: '.5rem .6rem' }} className="bg-sunken rounded-[8px]">
               <span style={{ fontSize: '.56rem', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }} className="text-tertiary">Depth</span>
-              <strong style={{ display: 'block', fontSize: '.76rem', marginTop: '.1rem' }}>{quakeSel.depthKm != null ? `${Math.round(quakeSel.depthKm)} km` : '—'}</strong>
+              <strong style={{ display: 'block', fontSize: '.76rem', marginTop: '.1rem' }}>{quakeSel.depthKm != null ? `${Math.round(quakeSel.depthKm)} km` : '-'}</strong>
             </div>
           </div>
           <p style={{ margin: '.55rem 0 0', fontSize: '.66rem' }} className="text-secondary">
@@ -1291,139 +1750,323 @@ export function NationalMap() {
         )
       })()}
 
-      <aside className="atlas-float atlas-side">
-        <div className="panel" style={{ padding: '.9rem 1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem', flexWrap: 'wrap' }}>
-            <button onClick={() => selectProvince(null)} style={{ fontSize: '.68rem', fontWeight: 700 }} className="text-accent">
-              {province ? (district ? `${province} / ${district}` : province) : 'Nepal'} ⌄
-            </button>
-            {(province || district) && (
-              <button onClick={() => selectProvince(null)} style={{ fontSize: '.64rem', fontWeight: 600 }} className="text-tertiary">
-                Reset ✕
-              </button>
-            )}
+      {/* Bottom-left: Legend Dock + Basemap Card Picker */}
+      <div className="atlas-bottom-left">
+        {/* Compact always-visible legend dock */}
+        <div className="atlas-legend-dock">
+          <div className="legend-header" onClick={() => setIsLegendExpanded(v => !v)}>
+            <span style={{ fontSize: '.58rem', letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 800 }}>
+              🗺 Map Legend
+            </span>
+            <span style={{ fontSize: '.62rem', color: 'var(--text-tertiary)' }}>
+              {isLegendExpanded ? '▲' : '▼'}
+            </span>
           </div>
-          {province && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.3rem', marginTop: '.6rem', maxHeight: 132, overflowY: 'auto' }}>
-              {!districtsReady && <span className="muted" style={{ fontSize: '.66rem' }}>Loading 77 districts…</span>}
-              {districtsReady && provinceDistricts.length === 0 && (
-                <span style={{ fontSize: '.66rem', color: 'var(--danger)' }}>District list failed to load — check connection and retry.</span>
-              )}
-              {provinceDistricts.map(d => (
+          {isLegendExpanded && (
+            <div className="legend-items">
+              {([
+                { key: 'projects', color: '#0d7c5f', label: 'Projects' },
+                { key: 'hydro', color: '#16a34a', label: 'Hydro Op.' },
+                { key: 'hydro', color: '#2563eb', label: 'Hydro Gen.' },
+                { key: 'hydro', color: '#d97706', label: 'Hydro Surv.' },
+                { key: 'rain', color: '#0ea5e9', label: 'Rain Gauge' },
+                { key: 'rivers', color: '#dc2626', label: 'River Level' },
+                { key: 'quakes', color: '#f59e0b', label: 'Tremors' },
+                { key: 'quakesPast', color: '#b45309', label: 'Historic EQ' },
+                { key: 'incidents', color: '#7c3aed', label: 'Incidents' },
+                { key: 'weather', color: '#2563eb', label: 'Weather Stn' },
+                { key: 'roads', color: '#b45309', label: 'Highways' },
+              ] as { key: keyof Layers; color: string; label: string }[]).map(({ key, color, label }, i) => (
                 <button
-                  key={d.id}
-                  onClick={() => setDistrict(cur => (cur === d.name ? null : d.name))}
-                  style={{
-                    fontSize: '.64rem', fontWeight: 600, padding: '.28rem .55rem', borderRadius: 16, cursor: 'pointer',
-                    border: '1px solid var(--border-light)',
-                    background: district === d.name ? 'var(--accent)' : 'var(--bg-sunken)',
-                    color: district === d.name ? '#fff' : 'var(--text-secondary)',
-                  }}
+                  key={`${key}-${i}`}
+                  onClick={() => toggle(key)}
+                  className="atlas-legend-dot"
+                  style={{ opacity: layers[key] ? 1 : 0.45, border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', fontWeight: 700, fontSize: '.63rem' }}
+                  title={`${label} — click to ${layers[key] ? 'hide' : 'show'}`}
                 >
-                  {d.name}
-                </button>
-              ))}
-            </div>
-          )}
-          {province && !localLoading && localDistricts.length === 0 && (
-            <p style={{ fontSize: '.64rem', margin: '.5rem 0 0' }} className="text-tertiary">
-              Boundary shapes unavailable — district pins still work.
-            </p>
-          )}
-          {province && localLoading && (
-            <p style={{ fontSize: '.64rem', margin: '.5rem 0 0' }} className="text-tertiary">
-              Loading {province} shapes…
-            </p>
-          )}
-        </div>
-
-        <div className="panel" style={{ padding: '.9rem 1rem' }}>
-          <p className="eyebrow" style={{ margin: 0 }}>LAYERS</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '.35rem', marginTop: '.5rem' }}>
-            {([
-              ['projects', '#0d7c5f', `Projects (${counts.projects})`, '◎ exact · dashed ≈'],
-              ['hydro', '#16a34a', `Hydropower (${counts.hydro})`, 'green op · blue gen · amber survey'],
-              ['quakes', '#f59e0b', `Tremors 2083 (${counts.quakes})`, 'USGS live'],
-              ['quakesPast', '#b45309', `Historical (${counts.quakesPast})`, 'older quakes'],
-              ['weather', '#2563eb', `Stations (${counts.weather})`, 'DHM · tap for details'],
-              ['incidents', '#7c3aed', `Incidents BS 2083 (${counts.incidents})`, 'BIPAD'],
-              ['roads', '#b45309', `Highways (${counts.roads})`, 'ICIMOD network'],
-              ['rain', '#0ea5e9', `Rain gauges (${counts.rain})`, 'tap for rainfall'],
-              ['rivers', '#dc2626', `River stations (${counts.rivers})`, 'colour = flood level'],
-              ['munis', '#94a3b8', `Municipalities (${district ? activeMunis.length : '—'})`, 'palika borders in district'],
-              ['parks', '#0f766e', `Protected (${district ? activeParks.length : '—'})`, 'parks & reserves'],
-            ] as [keyof Layers, string, string, string][]).map(([k, c, label, note]) => (
-              <button
-                key={k}
-                onClick={() => toggle(k)}
-                style={{ display: 'flex', alignItems: 'center', gap: '.5rem', fontSize: '.72rem', fontWeight: 600, cursor: 'pointer', opacity: layers[k] ? 1 : 0.45, textAlign: 'left' }}
-              >
-                <span style={{ width: 10, height: 10, borderRadius: '50%', background: c, flexShrink: 0 }} />
-                <span style={{ flex: 1 }}>{label}</span>
-                <span style={{ fontSize: '.58rem', fontWeight: 400 }} className="text-tertiary">{note}</span>
-              </button>
-            ))}
-          </div>
-          {layers.hydro && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.3rem', marginTop: '.55rem' }}>
-              {([['all', 'All'], ['operation', 'Operational'], ['generation', 'Generation'], ['survey', 'Survey']] as const).map(([k, label]) => (
-                <button
-                  key={k}
-                  onClick={() => setHydroKindFilter(k)}
-                  style={{
-                    fontSize: '.6rem', fontWeight: 700, padding: '.22rem .5rem', borderRadius: 16, cursor: 'pointer',
-                    border: '1px solid var(--border-light)',
-                    background: hydroKindFilter === k ? (k === 'all' ? 'var(--accent)' : HYDRO_KIND_COLOR[k]) : 'var(--bg-sunken)',
-                    color: hydroKindFilter === k ? '#fff' : 'var(--text-secondary)',
-                  }}
-                >
-                  {k !== 'all' && <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 99, marginRight: '.3rem', background: hydroKindFilter === k ? '#fff' : HYDRO_KIND_COLOR[k] }} />}
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
                   {label}
                 </button>
               ))}
             </div>
           )}
-          <div style={{ marginTop: '.7rem', display: 'flex', flexDirection: 'column', gap: '.32rem' }}>
-            <span style={{ fontSize: '.56rem', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }} className="text-tertiary">Licensed capacity</span>
-            {(['operation', 'generation', 'survey'] as const).map(k => (
-              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.66rem' }}>
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: HYDRO_KIND_COLOR[k], flexShrink: 0 }} />
-                <span style={{ flex: 1 }} className="text-secondary">{HYDRO_KIND_LABEL[k]}</span>
-                <strong style={{ minWidth: 34, textAlign: 'right' }}>{hydroTotals[k].n}</strong>
-                <span className="text-tertiary" style={{ minWidth: 66, textAlign: 'right' }}>{hydroTotals[k].mw.toLocaleString(undefined, { maximumFractionDigits: 0 })} MW</span>
+        </div>
+
+        {/* Google Maps-style basemap card picker */}
+        <div className="atlas-basemap-picker">
+          <span style={{ fontSize: '.56rem', fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: 'rgba(255,255,255,.85)', textShadow: '0 1px 3px rgba(0,0,0,.5)' }}>
+            Basemap
+          </span>
+          <div className="atlas-basemap-cards">
+            {([
+              {
+                key: 'topo',
+                label: 'Topo',
+                // Use inline SVG pattern as thumbnail fallback
+                bg: 'linear-gradient(135deg, #e8f0d8 0%, #b8cfa0 40%, #d4b896 70%, #a8c8a0 100%)',
+              },
+              {
+                key: 'satellite',
+                label: 'Satellite',
+                bg: 'linear-gradient(135deg, #1a2a1a 0%, #2a3a1a 30%, #1a2a30 60%, #0a1a0a 100%)',
+              },
+              {
+                key: 'streets',
+                label: 'Streets',
+                bg: 'linear-gradient(135deg, #f8f4ec 0%, #e8e0cc 30%, #f8f4ec 60%, #d0c8b8 100%)',
+              },
+              {
+                key: 'dark',
+                label: 'Dark',
+                bg: 'linear-gradient(135deg, #0a0f14 0%, #121920 40%, #1c2a20 70%, #0a0f14 100%)',
+              },
+            ] as { key: BasemapKey; label: string; bg: string }[]).map(({ key, label, bg }) => (
+              <div
+                key={key}
+                className={`atlas-basemap-card ${basemap === key ? 'selected' : ''}`}
+                onClick={() => setBasemap(key)}
+                title={`Switch to ${label} basemap`}
+              >
+                <div className="atlas-basemap-thumb" style={{ background: bg }}>
+                  {/* Tiny pseudo-map lines to make it look like a map thumbnail */}
+                  <svg width="100%" height="100%" viewBox="0 0 64 46" preserveAspectRatio="none" style={{ opacity: 0.4 }}>
+                    {key === 'topo' && <>
+                      <path d="M0 20 Q16 14 32 18 Q48 22 64 16" stroke="#4a7c40" strokeWidth="1.5" fill="none"/>
+                      <path d="M0 30 Q20 24 40 28 Q52 30 64 26" stroke="#6a9c60" strokeWidth="1" fill="none"/>
+                      <path d="M8 40 Q24 34 40 38" stroke="#8aac80" strokeWidth="1" fill="none"/>
+                    </>}
+                    {key === 'satellite' && <>
+                      <rect x="10" y="8" width="18" height="12" rx="1" fill="#2a5a2a" opacity="0.6"/>
+                      <rect x="36" y="14" width="22" height="16" rx="1" fill="#1a4a3a" opacity="0.5"/>
+                      <rect x="6" y="28" width="14" height="10" rx="1" fill="#3a5a1a" opacity="0.4"/>
+                    </>}
+                    {key === 'streets' && <>
+                      <line x1="0" y1="23" x2="64" y2="23" stroke="#ccc" strokeWidth="2.5"/>
+                      <line x1="32" y1="0" x2="32" y2="46" stroke="#ccc" strokeWidth="1.5"/>
+                      <line x1="0" y1="10" x2="64" y2="10" stroke="#ddd" strokeWidth="1"/>
+                      <line x1="0" y1="36" x2="64" y2="36" stroke="#ddd" strokeWidth="1"/>
+                    </>}
+                    {key === 'dark' && <>
+                      <line x1="0" y1="23" x2="64" y2="23" stroke="#2a4a3a" strokeWidth="2"/>
+                      <line x1="32" y1="0" x2="32" y2="46" stroke="#1a3a2a" strokeWidth="1.5"/>
+                      <circle cx="22" cy="16" r="2" fill="#34c99a" opacity="0.7"/>
+                      <circle cx="44" cy="30" r="1.5" fill="#34c99a" opacity="0.5"/>
+                    </>}
+                  </svg>
+                </div>
+                <div className="atlas-basemap-label">{label}</div>
               </div>
             ))}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.66rem', borderTop: '1px solid var(--border-light)', paddingTop: '.32rem', marginTop: '.05rem' }}>
-              <span style={{ flex: 1, fontWeight: 700 }}>Total register</span>
-              <strong style={{ minWidth: 34, textAlign: 'right' }}>{hydroTotals.operation.n + hydroTotals.generation.n + hydroTotals.survey.n}</strong>
-              <span className="text-tertiary" style={{ minWidth: 66, textAlign: 'right' }}>{(hydroTotals.operation.mw + hydroTotals.generation.mw + hydroTotals.survey.mw).toLocaleString(undefined, { maximumFractionDigits: 0 })} MW</span>
-            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Right Controls: Zoom Stack + GPS */}
+      <div className="atlas-bottom-controls">
+        {/* Map title & coords badge */}
+        <div className="atlas-title-badge">
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <strong style={{ fontSize: '.74rem', color: 'var(--text)', lineHeight: 1.2 }}>Nepal, plotted.</strong>
+            <span style={{ fontSize: '.56rem', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 3, marginTop: 1 }}>
+              <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#16a34a', flexShrink: 0 }} />
+              {centerCoord.lat.toFixed(3)}°N · {centerCoord.lng.toFixed(3)}°E
+            </span>
           </div>
         </div>
 
-        <div className="panel" style={{ padding: '.9rem 1rem' }}>
-          <p className="eyebrow" style={{ margin: 0 }}>
-            {district ? `IN ${district.toUpperCase()}` : province ? `IN ${province.toUpperCase()}` : 'ON THIS VIEW'}
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', marginTop: '.4rem', maxHeight: 300, overflowY: 'auto' }}>
-            {visibleProjects.length === 0 && <p className="muted" style={{ fontSize: '.7rem' }}>No tracked projects here — try clearing the district.</p>}
-            {visibleProjects.map(({ p, district: dd, provinceLevel, exact, siteLabel }) => (
-              <Link key={p.name} href={`/projects/${slugify(p.name)}`} className="source-row" style={{ padding: '.5rem 0' }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_COLOR[p.status] ?? '#0d7c5f', flexShrink: 0 }} />
-                <div style={{ minWidth: 0 }}>
-                  <strong style={{ fontSize: '.74rem', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</strong>
-                  <p style={{ margin: 0 }}>{p.status} · {p.progress}% · {p.budget} · {exact ? `◎ ${siteLabel}` : `≈ ${dd ?? `${p.province} province`}`}</p>
-                </div>
-              </Link>
-            ))}
-            {nationalProjects.length > 0 && !district && (
-              <p className="muted" style={{ fontSize: '.64rem', marginTop: '.4rem' }}>
-                + {nationalProjects.length} national-scope projects (corridors, rail) listed in the tracker, not pinned.
-              </p>
+        {/* Zoom stack + GPS button */}
+        <div className="atlas-zoom-pill">
+          <button
+            onClick={() => mapInstance?.zoomIn()}
+            className="atlas-zoom-btn"
+            title="Zoom In (+)"
+            aria-label="Zoom in"
+          >
+            <Plus size={16} />
+          </button>
+          <div className="atlas-zoom-badge">Z{zoomLevel}</div>
+          <button
+            onClick={() => mapInstance?.zoomOut()}
+            className="atlas-zoom-btn"
+            title="Zoom Out (−)"
+            aria-label="Zoom out"
+          >
+            <Minus size={16} />
+          </button>
+          <button
+            onClick={() => {
+              selectProvince(null)
+              mapInstance?.flyToBounds(NEPAL_BBOX, { padding: [40, 40], duration: 0.8 })
+            }}
+            className="atlas-zoom-btn"
+            title="Reset view to all Nepal"
+            aria-label="Fit Nepal"
+            style={{ borderTop: '1px solid var(--border-light)' }}
+          >
+            <RotateCcw size={14} />
+          </button>
+          <button
+            onClick={locateMe}
+            className={`atlas-zoom-btn${gpsPosition ? ' gps-active' : ''}`}
+            title={
+              gpsLoading
+                ? 'Locating…'
+                : gpsPosition
+                ? 'Click to clear your location'
+                : 'Show my location on map'
+            }
+            aria-label="My location"
+            style={{
+              borderTop: '1px solid var(--border-light)',
+              color: gpsLoading ? '#d97706' : gpsPosition ? '#2563eb' : 'var(--text)',
+            }}
+          >
+            {gpsLoading ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'spin 0.9s linear infinite' }}>
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+              </svg>
+            ) : (
+              <Navigation size={14} style={{ color: gpsPosition ? '#2563eb' : 'var(--text)' }} />
             )}
-          </div>
+          </button>
         </div>
-      </aside>
+
+        {/* GPS error snackbar */}
+        {gpsError && (
+          <div
+            style={{
+              background: 'rgba(220,38,38,.95)',
+              color: '#fff',
+              borderRadius: 10,
+              padding: '.45rem .7rem',
+              fontSize: '.64rem',
+              fontWeight: 600,
+              maxWidth: 230,
+              lineHeight: 1.4,
+              boxShadow: '0 4px 12px rgba(220,38,38,.3)',
+              animation: 'inspectorIn .22s ease',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+              <span style={{ flexShrink: 0 }}>📍</span>
+              <span>{gpsError}</span>
+              <button onClick={() => setGpsError(null)} style={{ border: 'none', background: 'transparent', color: '#fff', cursor: 'pointer', fontWeight: 800, marginLeft: 4, flexShrink: 0 }}>✕</button>
+            </div>
+          </div>
+        )}
+
+        {/* GPS active indicator */}
+        {gpsPosition && !gpsError && (
+          <div
+            style={{
+              background: 'rgba(37,99,235,.92)',
+              backdropFilter: 'blur(10px)',
+              color: '#fff',
+              borderRadius: 10,
+              padding: '.4rem .7rem',
+              fontSize: '.62rem',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              boxShadow: '0 3px 12px rgba(37,99,235,.35)',
+            }}
+          >
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff', animation: 'gpsPulse 1.8s ease-out infinite' }} />
+            <span>
+              {gpsPosition.lat.toFixed(4)}°N, {gpsPosition.lng.toFixed(4)}°E
+              <span style={{ opacity: .75, marginLeft: 4 }}>±{Math.round(gpsPosition.accuracy)}m</span>
+            </span>
+            <button onClick={() => { setGpsPosition(null); setGpsError(null) }} style={{ border: 'none', background: 'transparent', color: '#fff', cursor: 'pointer', opacity: .75, fontWeight: 700, marginLeft: 2, padding: 0 }}>✕</button>
+          </div>
+        )}
+      </div>
+
+      {/* Attribution bar */}
+      <div className="atlas-attribution">
+        {BASEMAPS[basemap].attribution} · Drishti v2 · BIPAD · DHM · USGS
+      </div>
+
+      {/* Slide-over Inspector Drawer for Hydro capacity & Projects List */}
+      {isInspectorOpen && (
+        <aside className="atlas-inspector">
+          <div style={{ padding: '.9rem 1rem', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+            <div>
+              <p className="eyebrow" style={{ margin: 0 }}>EXPLORER &amp; REGISTRY</p>
+              <strong style={{ fontSize: '1.05rem', display: 'block', marginTop: 2 }}>
+                {district ? `${district} District` : province ? `${province} Province` : 'Nepal Overview'}
+              </strong>
+              <p style={{ margin: '2px 0 0', fontSize: '.64rem' }} className="text-secondary">
+                {visibleProjects.length} projects · {visibleHydro.length} hydro plants in scope
+              </p>
+            </div>
+            <button
+              onClick={() => setIsInspectorOpen(false)}
+              aria-label="Close inspector"
+              style={{ fontSize: '.9rem', fontWeight: 700, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 4 }}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '.9rem 1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* Hydropower register summary */}
+            <div className="panel" style={{ padding: '.8rem', margin: 0 }}>
+              <span style={{ fontSize: '.56rem', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }} className="text-tertiary">Hydropower Licensed Capacity</span>
+              <div style={{ marginTop: '.5rem', display: 'flex', flexDirection: 'column', gap: '.35rem' }}>
+                {(['operation', 'generation', 'survey'] as const).map(k => (
+                  <div key={k} style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.68rem' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 2, background: HYDRO_KIND_COLOR[k], flexShrink: 0 }} />
+                    <span style={{ flex: 1 }} className="text-secondary">{HYDRO_KIND_LABEL[k]}</span>
+                    <strong style={{ minWidth: 34, textAlign: 'right' }}>{hydroTotals[k].n}</strong>
+                    <span className="text-tertiary" style={{ minWidth: 70, textAlign: 'right' }}>{hydroTotals[k].mw.toLocaleString(undefined, { maximumFractionDigits: 0 })} MW</span>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.68rem', borderTop: '1px solid var(--border-light)', paddingTop: '.35rem', marginTop: '.1rem' }}>
+                  <span style={{ flex: 1, fontWeight: 700 }}>Total register</span>
+                  <strong style={{ minWidth: 34, textAlign: 'right' }}>{hydroTotals.operation.n + hydroTotals.generation.n + hydroTotals.survey.n}</strong>
+                  <span className="text-tertiary" style={{ minWidth: 70, textAlign: 'right' }}>{(hydroTotals.operation.mw + hydroTotals.generation.mw + hydroTotals.survey.mw).toLocaleString(undefined, { maximumFractionDigits: 0 })} MW</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Pinned Projects */}
+            <div>
+              <p className="eyebrow" style={{ margin: '0 0 .5rem' }}>
+                PROJECTS IN SCOPE ({visibleProjects.length})
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '.4rem' }}>
+                {visibleProjects.length === 0 && (
+                  <p className="muted" style={{ fontSize: '.7rem', padding: '.5rem 0' }}>
+                    No tracked projects in this view — try zooming out or clearing district filter.
+                  </p>
+                )}
+                {visibleProjects.map(({ p, district: dd, exact, siteLabel }) => (
+                  <Link
+                    key={p.name}
+                    href={`/projects/${slugify(p.name)}`}
+                    className="source-row"
+                    style={{ padding: '.55rem .7rem', borderRadius: 10, background: 'var(--bg-sunken)', textDecoration: 'none' }}
+                  >
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_COLOR[p.status] ?? '#0d7c5f', flexShrink: 0, marginTop: 4 }} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <strong style={{ fontSize: '.76rem', display: 'block', color: 'var(--text)' }}>{p.name}</strong>
+                      <p style={{ margin: '2px 0 0', fontSize: '.64rem', color: 'var(--text-secondary)' }}>
+                        {p.status} · {p.progress}% · {p.budget} · {exact ? `◎ ${siteLabel}` : `≈ ${dd ?? `${p.province} province`}`}
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+                {nationalProjects.length > 0 && !district && (
+                  <p className="muted" style={{ fontSize: '.64rem', marginTop: '.4rem' }}>
+                    + {nationalProjects.length} national-scope projects (corridors, rail) listed in tracker, not pinned.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </aside>
+      )}
     </>
   )
 }

@@ -38,7 +38,7 @@ function HeroSpotlight({ counts, wbCount }: { counts: { total: number; completed
       <strong style={{ display: 'block', fontSize: '1.5rem', letterSpacing: '-.03em', marginTop: '.15rem' }}>{totalLabel}</strong>
       <div style={{ display: 'flex', gap: '1.25rem', marginTop: '.6rem' }}>
         <span style={{ fontSize: '.7rem' }}><strong>{avg}%</strong> <span style={{ opacity: .7 }}>avg progress</span></span>
-        <span style={{ fontSize: '.7rem' }}><strong>{wbCount ?? '—'}</strong> <span style={{ opacity: .7 }}>WB projects</span></span>
+        <span style={{ fontSize: '.7rem' }}><strong>{wbCount ?? '-'}</strong> <span style={{ opacity: .7 }}>WB projects</span></span>
       </div>
       {spotlight && (
         <Link
@@ -140,11 +140,11 @@ export default function ProjectsPage() {
               Building the nation,<br />project by project.
             </h1>
             <p style={{ fontSize: '.82rem', opacity: .85, margin: 0, maxWidth: 520, lineHeight: 1.6 }}>
-              Highways, hydropower, airports and irrigation — physical progress, budgets and evidence for every flagship build.
+              Highways, hydropower, airports and irrigation: physical progress, budgets and evidence for every flagship build.
               {wbCount ? ` Plus ${wbCount} World Bank–financed projects in the portfolio.` : ''}
             </p>
             <div style={{ display: 'flex', gap: '.55rem', marginTop: '1.1rem', flexWrap: 'wrap' }}>
-              <Link href="/projects/map" style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem', background: '#fff', color: '#7c2d12', fontSize: '.76rem', fontWeight: 800, padding: '.6rem 1.05rem', borderRadius: 10 }}>
+              <Link href="/map" style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem', background: '#fff', color: '#7c2d12', fontSize: '.76rem', fontWeight: 800, padding: '.6rem 1.05rem', borderRadius: 10 }}>
                 🗺 Open national map
               </Link>
               <a href="#tracker" style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem', border: '1px solid rgba(255,255,255,.4)', color: '#fff', fontSize: '.76rem', fontWeight: 700, padding: '.6rem 1.05rem', borderRadius: 10 }}>

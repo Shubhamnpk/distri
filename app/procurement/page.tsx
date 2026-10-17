@@ -24,7 +24,7 @@ export default async function ProcurementPage() {
         </h1>
         <p style={{ fontSize: '.82rem', opacity: .85, margin: 0, maxWidth: 560, lineHeight: 1.6 }}>
           {summary
-            ? `${summary.total.toLocaleString()} contracting processes from ${summary.buyers.toLocaleString()} public offices — searchable by work, office, or OCID.`
+            ? `${summary.total.toLocaleString()} contracting processes from ${summary.buyers.toLocaleString()} public offices, searchable by work, office, or OCID.`
             : 'The tender archive could not be reached right now.'}
         </p>
         <div style={{ display: 'flex', gap: '.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
@@ -72,7 +72,7 @@ export default async function ProcurementPage() {
           {/* ── Honesty banner ── */}
           <div className="bg-warning-light text-secondary rounded-[10px] border border-warning" style={{ marginBottom: '.75rem', padding: '.65rem .8rem', fontSize: '.7rem', lineHeight: 1.55 }}>
             <strong>Historical snapshot, not live.</strong> This mirror ends in 2018. Live tenders will appear here automatically
-            once PPMO&apos;s e-GP portal recovers from maintenance — no code change needed.
+            once PPMO&apos;s e-GP portal recovers from maintenance; no code change needed.
           </div>
 
           {/* ── Year chart + top buyers ── */}

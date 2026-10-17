@@ -10,6 +10,7 @@ const exploreLinks = [
   { href: '/', label: 'Overview' },
   { href: '/companies', label: 'Companies' },
   { href: '/projects', label: 'Projects' },
+  { href: '/map', label: 'National Map' },
   { href: '/procurement', label: 'Procurement' },
   { href: '/economy', label: 'Economy' },
   { href: '/environment', label: 'Environment' },
@@ -33,7 +34,7 @@ const projectLinks = [
 export function Footer() {
   const pathname = usePathname()
   // Full-bleed atlas route renders its own chrome.
-  if (pathname === '/projects/map') return null
+  if (pathname === '/map' || pathname === '/projects/map') return null
 
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/')

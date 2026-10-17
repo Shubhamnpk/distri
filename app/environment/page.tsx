@@ -70,7 +70,7 @@ export default function EnvironmentPage() {
 
   const stations: DhmStationForecast[] = (forecast?.stations ?? []).filter(s => (s.manual_forecast ?? []).length > 0)
 
-  // One batched call for live temps across all stations — cards and detail
+  // One batched call for live temps across all stations: cards and detail
   // heroes read the same value, so a card never disagrees with its detail page.
   useEffect(() => {
     const key = forecast?.datetime ?? ''
