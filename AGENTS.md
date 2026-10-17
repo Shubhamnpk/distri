@@ -45,6 +45,9 @@ Next.js 16.3.3 App Router + Turbopack, React 19, TypeScript 5.7 strict (`noEmit`
 - `formatNpr`/`formatUsd` use live WB exchange rate `PA.NUS.FCRF` with fallback `133.5` (`lib/api.ts:NPR_RATE`)
 - Full feed catalogue (endpoints, codes, gotchas, dead ends): `docs/apis.md` — read it before adding any source
 
+## Currency (constant symbols — never hardcode)
+- ALL currency formatting lives in `lib/currency.ts` — the only source of symbols and compact ladders: `NPR_SYMBOL` = रु (U+0930 U+0941, escaped), `USD_SYMBOL` = `$`, `NPR_CODE`/`USD_CODE`. Numeric amounts: `formatNpr` (Nepali scale Lakh 1e5 · Crore 1e7 · Arba 1e9 · Kharab 1e11), `formatUsd` (T/B/M; below 1M full `$1,423`), `formatNum` (no-symbol compact for counts). Rate chips/figures: `formatNprRate` (रु 152.44), `formatFxPair` (रु 152.44 / $). String boundaries: `formatNprText`/`formatNprOrNA` (normalizes legacy `NPR`/`Rs` labels). `NPR` as text appears only as ISO code in pair labels (`USD/NPR`) and prose quoting reports — never as a display prefix; no `रु`/`$` literals in pages (charts' default tooltip uses `USD_SYMBOL` import). Live rate chain stays in `lib/api.ts` (`getLiveNprRate`); formatters there are deleted — import from `@/lib/currency`.
+
 ## Styling / gotchas
 - Design tokens in `app/globals.css: :root` (`--bg`, `--accent`, `--border`, etc.); dark mode via `[data-theme="dark"]` and `@media (prefers-color-scheme: dark)` — update both
 - Tokens are fully mapped in `@theme inline`, so prefer utilities over `var()` in new code: `bg-card/bg-sunken/bg-canvas`, `text-ink/text-secondary/text-tertiary`, `border-line/border-line-light`, `text-accent/bg-accent`, `text-danger/bg-danger-light`, `shadow-sm/md/lg`, `rounded-lg(14px)/rounded-xl(18px)`, `font-sans`. Values match the `var()` tokens exactly.

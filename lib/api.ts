@@ -1,4 +1,3 @@
-import { NPR_SYMBOL } from '@/lib/currency'
 import { fetchNepseData } from './nepse'
 import { fetchProjectNepalDistricts, fetchProjectNepalProjects } from './project-nepal'
 import { getRelevantDatasets } from './opendatanepal'
@@ -86,10 +85,18 @@ export type EconomyData = {
   govtRevenue: WbDataPoint[]
   tradeOpenness: WbDataPoint[]
   imfGdpGrowth: WbDataPoint[]
+  imfNominalGdp: WbDataPoint[]
+  imfGdpPerCapita: WbDataPoint[]
+  imfGdpPpp: WbDataPoint[]
+  imfPppPerCapita: WbDataPoint[]
   imfInflation: WbDataPoint[]
   imfUnemployment: WbDataPoint[]
   imfCurrentAccount: WbDataPoint[]
+  imfInvestment: WbDataPoint[]
+  imfGovtRevenue: WbDataPoint[]
+  imfGovtExpenditure: WbDataPoint[]
   imfGovtDebt: WbDataPoint[]
+  imfGrossDebt: WbDataPoint[]
   imfFiscalBalance: WbDataPoint[]
   maternalMortality: WbDataPoint[]
   primaryEnrollment: WbDataPoint[]
@@ -164,6 +171,9 @@ export async function fetchEconomyData(): Promise<EconomyData> {
     imfGdpGrowth, imfInflation, imfUnemployment, imfCurrentAccount,
     imfGovtDebt, imfFiscalBalance,
     maternalMortality, primaryEnrollment, mobileSubs, forestArea, energyUse, fertility,
+    // Filled by /api/imf (DBnomics WEO fallback); empty until the client merges.
+    imfNominalGdp: [], imfGdpPerCapita: [], imfGdpPpp: [], imfPppPerCapita: [],
+    imfInvestment: [], imfGovtRevenue: [], imfGovtExpenditure: [], imfGrossDebt: [],
   }
 }
 
@@ -215,34 +225,6 @@ export async function getLiveNprRate(): Promise<number> {
     }
   } catch {}
   return NPR_FALLBACK
-}
-
-export function formatUsd(v: number): string {
-  if (v >= 1e12) return `$${(v / 1e12).toFixed(2)}T`
-  if (v >= 1e9) return `$${(v / 1e9).toFixed(1)}B`
-  if (v >= 1e6) return `$${(v / 1e6).toFixed(0)}M`
-  return `$${v.toLocaleString()}`
-}
-
-export function formatNpr(v: number, rate?: number): string {
-  const r = rate ?? cachedNprRate ?? NPR_FALLBACK
-  const npr = v * r
-  if (npr >= 1e12) return `${NPR_SYMBOL} ${(npr / 1e12).toFixed(1)} Kharab`
-  if (npr >= 1e9) return `${NPR_SYMBOL} ${(npr / 1e9).toFixed(0)} Arba`
-  if (npr >= 1e7) return `${NPR_SYMBOL} ${(npr / 1e7).toFixed(0)} Crore`
-  return `${NPR_SYMBOL} ${Math.round(npr).toLocaleString()}`
-}
-
-export async function formatNprLive(v: number): Promise<string> {
-  const rate = await getLiveNprRate()
-  return formatNpr(v, rate)
-}
-
-export function formatNum(v: number): string {
-  if (v >= 1e9) return `${(v / 1e9).toFixed(2)}B`
-  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`
-  if (v >= 1e3) return `${(v / 1e3).toFixed(0)}K`
-  return v.toLocaleString()
 }
 
 export function pctChange(curr: number, prev: number): number {

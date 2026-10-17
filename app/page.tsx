@@ -9,7 +9,7 @@ import { getNrbUsdRate } from '@/lib/nrb'
 import { fetchNepseIndex, fetchNepseStocks } from '@/lib/nepse'
 import { nptTime12 } from '@/lib/calendar'
 import { isNptDay } from '@/lib/time'
-import { formatNpr, formatNprText } from '@/lib/currency'
+import { formatNpr, formatNprRate, formatNprText } from '@/lib/currency'
 import { fetchWbProjectCount } from '@/lib/api'
 import { fetchCurrentWeather, fetchCurrentPm25, type CurrentWeather } from '@/lib/meteo'
 
@@ -103,7 +103,7 @@ export default function HomePage() {
 
   const tape: { label: string; value: string; up?: boolean }[] = []
   if (live.nepse) tape.push({ label: 'NEPSE', value: `${live.nepse.v.toFixed(2)} (${live.nepse.chg >= 0 ? '+' : ''}${live.nepse.chg.toFixed(2)})`, up: live.nepse.chg >= 0 })
-  if (live.rate) tape.push({ label: 'USD/NPR', value: `रु ${live.rate.toFixed(2)}` })
+  if (live.rate) tape.push({ label: 'USD/NPR', value: formatNprRate(live.rate) })
   if (live.breadth) {
     tape.push({ label: 'Advances', value: String(live.breadth.adv), up: true })
     tape.push({ label: 'Declines', value: String(live.breadth.dec), up: false })
@@ -174,7 +174,7 @@ export default function HomePage() {
           </div>
           <div className="chip chip-2">
             <Globe2 size={16} style={{ color: 'var(--accent)' }} />
-            <div><small>USD / NPR · NRB</small><strong>{live.rate ? `रु ${live.rate.toFixed(2)}` : '-'}</strong></div>
+            <div><small>USD / NPR · NRB</small><strong>{live.rate ? formatNprRate(live.rate) : '-'}</strong></div>
           </div>
           <div className="chip chip-3">
             <CloudSun size={16} style={{ color: 'var(--accent)' }} />
@@ -199,7 +199,7 @@ export default function HomePage() {
             : <span>Live when market feeds answer</span>}
         </article>
         <article className="metric-card">
-          <Globe2 size={18} /><p>Dollar rate today</p><strong>{live.rate ? `रु ${live.rate.toFixed(2)}` : '-'}</strong>
+          <Globe2 size={18} /><p>Dollar rate today</p><strong>{live.rate ? formatNprRate(live.rate) : '-'}</strong>
           <span>{live.rate ? 'NRB official fixing' : 'Fetching NRB feed…'}</span>
         </article>
       </section>
@@ -241,7 +241,7 @@ export default function HomePage() {
             <CircleAlert style={{ color: 'var(--danger)' }} size={20} />
           </div>
           {signalProject && (
-            <div className="signal"><div className="signal-number">01</div><div><strong>{signalProject.name}</strong><p>Physical progress {signalProject.progress}% · target {signalProject.target}.</p><StatusBadge status={signalProject.status} /></div></div>
+            <div className="signal"><div className="signal-number">01</div><div><strong>{signalProject.name}</strong><p>Physical progress {signalProject.progress}% · target {formatNprText(signalProject.target)}.</p><StatusBadge status={signalProject.status} /></div></div>
           )}
           {signalCompany && (
             <div className="signal"><div className="signal-number">02</div><div><strong>{signalCompany.name}</strong><p>{formatNprText(signalCompany.result)} · {signalCompany.year}.</p><StatusBadge status={signalCompany.operatingStatus} /></div></div>

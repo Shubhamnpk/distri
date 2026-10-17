@@ -3,6 +3,7 @@ import { ArrowUpRight, Database, Building2, CalendarDays, CircleAlert, ExternalL
 import { ProcurementTable } from '@/components/procurement-table'
 import { ProcurementYearChart } from '@/components/procurement-chart'
 import { fetchOcdsTenders, summarizeOcds } from '@/lib/ocds'
+import { NPR_SYMBOL } from '@/lib/currency'
 
 export const metadata = {
   title: 'Procurement Archive - Drishti',
@@ -117,7 +118,7 @@ export default async function ProcurementPage() {
         <div style={{ flex: 1, minWidth: 200 }}>
           <strong style={{ fontSize: '.74rem' }}>Source: PPMO e-GP via Open Contracting Partnership</strong>
           <p className="text-secondary" style={{ margin: '.1rem 0 0', fontSize: '.62rem' }}>
-            OCDS bulk release, refreshed daily · amounts in रु where disclosed
+            OCDS bulk release, refreshed daily · amounts in {NPR_SYMBOL} where disclosed
           </p>
         </div>
         <a href="https://data.open-contracting.org/en/publication/36" target="_blank" rel="noreferrer" className="text-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '.25rem', fontSize: '.7rem', fontWeight: 600 }}>

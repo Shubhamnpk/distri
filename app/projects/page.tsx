@@ -11,7 +11,7 @@ import { HydroAtlas } from '@/components/hydro-atlas'
 import { projects, slugify, parseBudgetCr, utilizationPct, PROVINCES, PROJECT_FX_NOTE, PROJECT_FX_SOURCE } from '@/lib/data'
 import { matchDistricts } from '@/lib/geo'
 import { fetchWbProjectCount } from '@/lib/api'
-import { formatNprText } from '@/lib/currency'
+import { formatNprText, formatNpr } from '@/lib/currency'
 
 const NepalMapReal = dynamic(() => import('@/components/nepal-map-real').then(m => m.NepalMapReal), {
   ssr: false,
@@ -22,6 +22,42 @@ import type { Project } from '@/lib/types'
 const STATUS_FILTERS = ['All', 'Completed', 'On track', 'At risk', 'Delayed'] as const
 const CATEGORY_FILTERS = ['All', 'Hydropower', 'Power', 'Highway', 'Airport', 'Irrigation', 'Water', 'Heritage', 'Sports', 'Rail', 'Conservation'] as const
 const SORTS = ['Newest', 'Budget ↓', 'Budget ↑', 'Progress ↓', 'Progress ↑', 'Name A-Z'] as const
+
+/** Glass spotlight card: live portfolio totals + the build needing attention. */
+function HeroSpotlight({ counts, wbCount }: { counts: { total: number; completed: number; onTrack: number; atRisk: number; delayed: number }; wbCount: number | null }) {
+  const budgeted = projects.map(p => parseBudgetCr(p.budget)).filter((v): v is number => v != null)
+  const totalCr = budgeted.reduce((a, b) => a + b, 0)
+  const totalLabel = formatNpr(totalCr * 1e7)
+  const avg = Math.round(projects.reduce((a, p) => a + p.progress, 0) / Math.max(1, projects.length))
+  const spotlight = [...projects]
+    .filter(p => p.status === 'Delayed' || p.status === 'At risk')
+    .sort((a, b) => a.progress - b.progress)[0]
+  return (
+    <div style={{ background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.22)', borderRadius: 16, padding: '1.1rem 1.2rem', backdropFilter: 'blur(10px)' }}>
+      <p style={{ margin: 0, fontSize: '.58rem', fontWeight: 700, letterSpacing: '.12em', opacity: .7 }}>PORTFOLIO VALUE TRACKED</p>
+      <strong style={{ display: 'block', fontSize: '1.5rem', letterSpacing: '-.03em', marginTop: '.15rem' }}>{totalLabel}</strong>
+      <div style={{ display: 'flex', gap: '1.25rem', marginTop: '.6rem' }}>
+        <span style={{ fontSize: '.7rem' }}><strong>{avg}%</strong> <span style={{ opacity: .7 }}>avg progress</span></span>
+        <span style={{ fontSize: '.7rem' }}><strong>{wbCount ?? '—'}</strong> <span style={{ opacity: .7 }}>WB projects</span></span>
+      </div>
+      {spotlight && (
+        <Link
+          href={`/projects/${slugify(spotlight.name)}`}
+          style={{ display: 'block', marginTop: '.8rem', padding: '.65rem .75rem', borderRadius: 10, background: 'rgba(0,0,0,.25)', textDecoration: 'none', color: '#fff' }}
+        >
+          <span style={{ fontSize: '.58rem', fontWeight: 700, letterSpacing: '.1em', opacity: .7 }}>NEEDS ATTENTION</span>
+          <strong style={{ display: 'block', fontSize: '.8rem', marginTop: '.15rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{spotlight.name}</strong>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '.45rem', marginTop: '.4rem' }}>
+            <span style={{ flex: 1, height: 5, borderRadius: 99, background: 'rgba(255,255,255,.2)', overflow: 'hidden' }}>
+              <span style={{ display: 'block', height: '100%', width: `${spotlight.progress}%`, background: '#f87171', borderRadius: 99 }} />
+            </span>
+            <span style={{ fontSize: '.66rem', fontWeight: 700 }}>{spotlight.progress}%</span>
+          </span>
+        </Link>
+      )}
+    </div>
+  )
+}
 
 export default function ProjectsPage() {
   const [query, setQuery] = useState('')
@@ -94,20 +130,31 @@ export default function ProjectsPage() {
   return (
     <div className="content-wrap">
       {/* ── Hero ── */}
-      <div className="eco-hero" style={{ background: 'linear-gradient(135deg, #9a3412 0%, #7c2d12 55%, #431407 100%)' }}>
-        <p style={{ fontSize: '.6rem', letterSpacing: '.16em', fontWeight: 700, opacity: .7, margin: 0 }}>NATIONAL DEVELOPMENT · {counts.total} PROJECTS</p>
-        <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.8rem, 3.5vw, 2.8rem)', fontWeight: 500, letterSpacing: '-.04em', margin: '.3rem 0 .4rem', lineHeight: 1.05 }}>
-          Building the nation, project by project.
-        </h1>
-        <p style={{ fontSize: '.82rem', opacity: .85, margin: 0, maxWidth: 560, lineHeight: 1.6 }}>
-          Highways, hydropower, airports and irrigation — physical progress, budgets and evidence for every flagship build.
-          {wbCount ? ` Plus ${wbCount} World Bank–financed projects in the portfolio.` : ''}
-        </p>
-        <p style={{ fontSize: '.68rem', opacity: .72, margin: '.45rem 0 0', maxWidth: 650, lineHeight: 1.5 }}>
-          National Pride project figures use the NPC cumulative progress report through FY 2082/83. Other major projects are tracked separately and may use different reporting dates.
-        </p>
-        <p style={{ fontSize: '.64rem', opacity: .72, margin: '.3rem 0 0', maxWidth: 650, lineHeight: 1.5 }}>{PROJECT_FX_NOTE} <a href={PROJECT_FX_SOURCE} target="_blank" rel="noreferrer" style={{ textDecoration: 'underline' }}>Rate source</a></p>
-        <div style={{ display: 'flex', height: 10, borderRadius: 99, overflow: 'hidden', marginTop: '1.1rem', background: 'rgba(255,255,255,.16)' }}>
+      <div className="eco-hero" style={{ background: 'linear-gradient(135deg, #9a3412 0%, #7c2d12 55%, #431407 100%)', overflow: 'hidden', position: 'relative' }}>
+        <div style={{ position: 'absolute', top: -70, right: -40, width: 300, height: 300, borderRadius: '50%', background: 'radial-gradient(circle, rgba(251,191,36,.28) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', bottom: -90, left: '30%', width: 260, height: 260, borderRadius: '50%', background: 'radial-gradient(circle, rgba(248,113,113,.18) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1.15fr .85fr', gap: '1.75rem', alignItems: 'center', position: 'relative' }} className="proj-hero-grid">
+          <div>
+            <p style={{ fontSize: '.6rem', letterSpacing: '.16em', fontWeight: 700, opacity: .7, margin: 0 }}>NATIONAL DEVELOPMENT · {counts.total} PROJECTS</p>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.9rem, 3.6vw, 3rem)', fontWeight: 500, letterSpacing: '-.04em', margin: '.3rem 0 .4rem', lineHeight: 1.04 }}>
+              Building the nation,<br />project by project.
+            </h1>
+            <p style={{ fontSize: '.82rem', opacity: .85, margin: 0, maxWidth: 520, lineHeight: 1.6 }}>
+              Highways, hydropower, airports and irrigation — physical progress, budgets and evidence for every flagship build.
+              {wbCount ? ` Plus ${wbCount} World Bank–financed projects in the portfolio.` : ''}
+            </p>
+            <div style={{ display: 'flex', gap: '.55rem', marginTop: '1.1rem', flexWrap: 'wrap' }}>
+              <Link href="/projects/map" style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem', background: '#fff', color: '#7c2d12', fontSize: '.76rem', fontWeight: 800, padding: '.6rem 1.05rem', borderRadius: 10 }}>
+                🗺 Open national map
+              </Link>
+              <a href="#tracker" style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem', border: '1px solid rgba(255,255,255,.4)', color: '#fff', fontSize: '.76rem', fontWeight: 700, padding: '.6rem 1.05rem', borderRadius: 10 }}>
+                Browse the list ↓
+              </a>
+            </div>
+          </div>
+          <HeroSpotlight counts={counts} wbCount={wbCount} />
+        </div>
+        <div style={{ display: 'flex', height: 10, borderRadius: 99, overflow: 'hidden', marginTop: '1.25rem', background: 'rgba(255,255,255,.16)', position: 'relative' }}>
           {[
             { count: counts.completed, color: '#4ade80' },
             { count: counts.onTrack, color: '#a7f3d0' },
@@ -117,7 +164,7 @@ export default function ProjectsPage() {
             <span key={i} style={{ width: `${(s.count / Math.max(1, counts.total)) * 100}%`, background: s.color }} />
           ))}
         </div>
-        <div style={{ display: 'flex', gap: '1rem', marginTop: '.55rem', flexWrap: 'wrap', fontSize: '.68rem', fontWeight: 700 }}>
+        <div style={{ display: 'flex', gap: '1rem', marginTop: '.55rem', flexWrap: 'wrap', fontSize: '.68rem', fontWeight: 700, position: 'relative' }}>
           <span>● {counts.completed} completed</span>
           <span>● {counts.onTrack} on track</span>
           <span>● {counts.atRisk} at risk</span>
@@ -125,7 +172,7 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      <section className="full-panel panel">
+      <section id="tracker" className="full-panel panel" style={{ scrollMarginTop: 80 }}>
         <div className="section-heading">
           <div>
             <p className="eyebrow">TRACKER</p>
@@ -135,6 +182,9 @@ export default function ProjectsPage() {
             {filtered.length} of {projects.length} shown
           </span>
         </div>
+        <p className="muted" style={{ fontSize: '.64rem', margin: '.35rem 0 0', lineHeight: 1.5 }}>
+          National Pride figures use the NPC cumulative progress report through FY 2082/83; other majors may use different reporting dates. {PROJECT_FX_NOTE} <a href={PROJECT_FX_SOURCE} target="_blank" rel="noreferrer" style={{ textDecoration: 'underline' }}>Rate source</a>
+        </p>
 
         <div style={{ display: 'flex', gap: '.5rem', marginTop: '.85rem', flexWrap: 'wrap' }}>
           <button

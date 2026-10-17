@@ -89,3 +89,50 @@ export async function fetchBipadRiverStations(limit = 50) {
 export async function fetchBipadGeo(level: 'province' | 'district' | 'municipality' | 'ward', limit = 100) {
   return fetchBipad<Record<string, unknown>>(`/${level}/`, limit)
 }
+
+export type BipadStation = {
+  id: number
+  title: string
+  point?: { type: string; coordinates: [number, number] }
+  district?: number
+  province?: number
+  basin?: string | null
+  elevation?: number
+  status?: string
+  /** River stations only — live telemetry. */
+  waterLevel?: number
+  dangerLevel?: number
+  warningLevel?: number
+  waterLevelOn?: string
+  steady?: string
+  measuredOn?: string
+  [key: string]: unknown
+}
+
+/** Walk the DRF `next` links to pull the whole station network (rain ~660, river ~280). */
+async function fetchBipadPages<T>(path: string, pages = 8, limit = 100): Promise<T[]> {
+  const out: T[] = []
+  let url: string | null = `${BIPAD_BASE}${path}?limit=${limit}`
+  for (let i = 0; i < pages && url; i++) {
+    try {
+      const res = await fetch(url, { headers: HEADERS, next: { revalidate: 3600 } })
+      if (!res.ok) break
+      const json: { results?: T[]; next?: string | null } = await res.json()
+      out.push(...(json?.results ?? []))
+      url = json?.next ?? null
+    } catch {
+      break
+    }
+  }
+  return out
+}
+
+/** National rainfall-gauge network (~660 stations) with coords + elevation. */
+export function fetchBipadRainStationsAll(): Promise<BipadStation[]> {
+  return fetchBipadPages<BipadStation>('/rain-stations/')
+}
+
+/** National river/water-level network (~280 stations) with live flood telemetry. */
+export function fetchBipadRiverStationsAll(): Promise<BipadStation[]> {
+  return fetchBipadPages<BipadStation>('/river-stations/')
+}

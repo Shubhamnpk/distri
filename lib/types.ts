@@ -77,6 +77,21 @@ export type ProjectChange = {
   note?: string
 }
 
+export type ProjectContractor = {
+  name: string
+  packages: string
+  origin: string
+  website?: string
+  note?: string
+}
+
+export type ProjectManagement = {
+  agency: string
+  person?: string
+  website?: string
+  note?: string
+}
+
 export type Project = {
   name: string
   ministry: string
@@ -98,6 +113,8 @@ export type Project = {
   gallery?: string[]
   changeLog?: ProjectChange[]
   completionNote?: string
+  contractors?: ProjectContractor[]
+  management?: ProjectManagement
   checklist: { label: string; state: CheckState; date: string; note: string }[]
   updates?: ProjectUpdate[]
 }

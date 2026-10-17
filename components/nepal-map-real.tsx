@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { MapContainer, GeoJSON } from 'react-leaflet'
+import { fetchProvinceShapes } from '@/lib/district-geo'
 import 'leaflet/dist/leaflet.css'
 
 const PROVINCE_MAP: Record<number, string> = {
@@ -27,13 +28,13 @@ export function NepalMapReal({
   const nationalCount = counts['National'] ?? 0
 
   useEffect(() => {
-    fetch('/geo/nepal-provinces-simple.geojson')
-      .then(r => r.json())
-      .then((data: { features: { properties: { id: number; name: string } }[] }) => {
+    fetchProvinceShapes()
+      .then((data) => {
         // remap id/name to our province ids
+        const feats = data.features as { properties: { id: number; name: string } }[]
         const mapped = {
           ...data,
-          features: data.features.map(f => ({
+          features: feats.map(f => ({
             ...f,
             properties: {
               ...f.properties,
@@ -51,8 +52,8 @@ export function NepalMapReal({
     const id = (feature as { properties: { id: string } }).properties.id
     const isActive = selected === id
     return {
-      fillColor: isActive ? '#0d7c5f' : '#ffffff',
-      color: isActive ? '#0d7c5f' : '#cbd5e1',
+      fillColor: isActive ? '#0b4f3e' : '#ffffff',
+      color: isActive ? '#0b4f3e' : '#cbd5e1',
       weight: isActive ? 2.2 : 1.1,
       fillOpacity: isActive ? 0.92 : 0.78,
     } as Record<string, unknown>

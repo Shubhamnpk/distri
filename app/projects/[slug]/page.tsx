@@ -5,7 +5,7 @@ import { projects, slugify, findProjectBySlug, parseBudgetCr, utilizationPct, PR
 import { StatusBadge } from '@/components/shared'
 import { RelatedDatasets } from '@/components/related-datasets'
 import type { ProjectUpdate } from '@/lib/types'
-import { formatNprText } from '@/lib/currency'
+import { formatNpr, formatNprText } from '@/lib/currency'
 
 export function generateStaticParams() {
   return projects.map(p => ({ slug: slugify(p.name) }))
@@ -216,8 +216,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         <div style={{ padding: '1.1rem clamp(1rem, 3vw, 1.5rem)', display: 'grid', gap: '.85rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '.6rem' }}>
             {[
-              { label: 'Budget', value: formatNprText(project.budget), extra: project.budgetNote ? null : parseBudgetCr(project.budget) != null ? `${parseBudgetCr(project.budget)!.toLocaleString()} Cr` : null, note: project.budgetNote },
-              { label: 'Spent', value: formatNprText(project.spent), extra: utilizationPct(project.spent, project.budget) != null ? `${utilizationPct(project.spent, project.budget)}% utilized` : parseBudgetCr(project.spent) != null ? `${parseBudgetCr(project.spent)!.toLocaleString()} Cr` : null, note: project.spentNote },
+              { label: 'Budget', value: formatNprText(project.budget), extra: project.budgetNote ? null : parseBudgetCr(project.budget) != null ? formatNpr(parseBudgetCr(project.budget)! * 1e7) : null, note: project.budgetNote },
+              { label: 'Spent', value: formatNprText(project.spent), extra: utilizationPct(project.spent, project.budget) != null ? `${utilizationPct(project.spent, project.budget)}% utilized` : parseBudgetCr(project.spent) != null ? formatNpr(parseBudgetCr(project.spent)! * 1e7) : null, note: project.spentNote },
               { label: 'Target', value: formatNprText(project.target), extra: null },
               { label: 'Updated', value: project.updated, extra: null },
               { label: 'Progress', value: `${project.progress}%`, extra: null },
@@ -344,6 +344,53 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 <strong className="text-primary" style={{ display: 'block', fontSize: '.82rem' }}>How it got done</strong>
                 <p className="text-secondary" style={{ margin: '.3rem 0 0', fontSize: '.78rem', lineHeight: 1.6 }}>{project.completionNote}</p>
               </div>
+            </section>
+          )}
+
+          {/* Management & contractors roster if present */}
+          {(project.management || (project.contractors && project.contractors.length > 0)) && (
+            <section className="panel">
+              <p className="eyebrow" style={{ margin: 0 }}>ACCOUNTABILITY</p>
+              <h2 className="font-serif" style={{ fontWeight: 500, fontSize: '1.15rem', margin: '.2rem 0 0' }}>Management &amp; contractors</h2>
+              <p className="muted" style={{ marginTop: '.25rem' }}>Who runs this project and who holds the contracts, with official websites listed only where they could be verified.</p>
+              {project.management && (
+                <div className="bg-sunken border border-line-light rounded-[10px]" style={{ marginTop: '.75rem', padding: '.7rem .8rem', display: 'flex', flexDirection: 'column', gap: '.3rem', borderColor: 'rgba(13,124,95,.25)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '.5rem', flexWrap: 'wrap' }}>
+                    <small className="text-tertiary" style={{ fontSize: '.64rem', letterSpacing: '.04em' }}>MANAGED BY</small>
+                    {project.management.website && (
+                      <a href={project.management.website} target="_blank" rel="noreferrer" className="text-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '.25rem', fontSize: '.68rem' }}>
+                        Official website <ExternalLink size={11} />
+                      </a>
+                    )}
+                  </div>
+                  <strong style={{ fontSize: '.82rem' }}>{project.management.agency}</strong>
+                  {project.management.person && (
+                    <span className="text-secondary" style={{ fontSize: '.72rem' }}>{project.management.person}</span>
+                  )}
+                  {project.management.note && (
+                    <p className="muted" style={{ margin: 0, fontSize: '.67rem', lineHeight: 1.5 }}>{project.management.note}</p>
+                  )}
+                </div>
+              )}
+              {project.contractors && project.contractors.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem', marginTop: '.6rem' }}>
+                  {project.contractors.map((c, i) => (
+                    <div key={`${c.name}-${i}`} className="bg-sunken border border-line-light rounded-[10px]" style={{ padding: '.7rem .8rem', display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '.5rem', flexWrap: 'wrap' }}>
+                        <strong style={{ fontSize: '.78rem' }}>{c.name}</strong>
+                        <span className="text-tertiary bg-card border border-line-light rounded-[4px]" style={{ fontSize: '.64rem', padding: '.1rem .4rem' }}>{c.origin}</span>
+                      </div>
+                      <span className="text-secondary" style={{ fontSize: '.72rem' }}>{c.packages}</span>
+                      {c.website && (
+                        <a href={c.website} target="_blank" rel="noreferrer" className="text-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '.25rem', fontSize: '.68rem' }}>
+                          Official website <ExternalLink size={11} />
+                        </a>
+                      )}
+                      {c.note && <p className="muted" style={{ margin: 0, fontSize: '.67rem', lineHeight: 1.5 }}>{c.note}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
           )}
 

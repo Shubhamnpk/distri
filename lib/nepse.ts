@@ -1,4 +1,4 @@
-import { formatNpr } from '@/lib/currency'
+import { formatNpr, formatNum } from '@/lib/currency'
 import type { NepseStock, NepseCompanyProfile, NepseCompanyFinancial, NepseMarketSummary, NepseData, NepseIndex, NepseReport } from './types'
 
 const BASE_URL = 'https://shubhamnpk.github.io/yonepse/data'
@@ -344,10 +344,7 @@ export function formatNprAmount(amount: unknown): string {
 export function formatNumber(num: unknown): string {
   const n = Number(num)
   if (num == null || Number.isNaN(n)) return '-'
-  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`
-  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`
-  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`
-  return n.toLocaleString()
+  return formatNum(n)
 }
 
 export function getSectorColor(sector: string): string {

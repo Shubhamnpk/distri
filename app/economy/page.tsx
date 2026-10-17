@@ -3,8 +3,40 @@
 import { useEffect, useState, useCallback } from 'react'
 import { ArrowUpRight, ArrowDownRight, TrendingUp, TrendingDown, BarChart3, Users, Zap, Globe2, Heart, GraduationCap, Leaf, Landmark, Banknote, ChartLine, Info, X, Maximize2 } from 'lucide-react'
 import { BarChart, LineChart } from '@/components/charts'
-import { fetchEconomyData, formatUsd, formatNpr, formatNum, pctChange, type EconomyData, type WbDataPoint } from '@/lib/api'
+import { fetchEconomyData, pctChange, type EconomyData, type WbDataPoint } from '@/lib/api'
+import { formatNpr, formatNprRate, formatFxPair, formatNum, formatUsd, NPR_SYMBOL, USD_SYMBOL } from '@/lib/currency'
 import { getNrbUsdRate } from '@/lib/nrb'
+
+const RANGE_OPTIONS = [
+  { key: '2', label: '2Y' },
+  { key: '3', label: '3Y' },
+  { key: '5', label: '5Y' },
+  { key: '10', label: '10Y' },
+  { key: 'max', label: 'Max' },
+] as const
+type RangeKey = typeof RANGE_OPTIONS[number]['key']
+
+/** Keep only the last N non-empty points (or everything for 'max'). */
+function rangeData(data: WbDataPoint[], range: RangeKey): WbDataPoint[] {
+  const clean = data.filter(d => d.value != null)
+  return range === 'max' ? clean : clean.slice(-Number(range))
+}
+
+const CURRENT_YEAR = String(new Date().getFullYear())
+
+/** Current-year point if present, else the latest actual ≤ this year. */
+function pickCurrent(arr: WbDataPoint[]): WbDataPoint | null {
+  const clean = arr.filter(d => d.value != null)
+  return clean.find(d => d.year === CURRENT_YEAR)
+    ?? [...clean].reverse().find(d => Number(d.year) <= Number(CURRENT_YEAR))
+    ?? clean[clean.length - 1]
+    ?? null
+}
+
+/** The point for the year immediately before `year`. */
+function pickPrev(arr: WbDataPoint[], year: string): WbDataPoint | null {
+  return arr.find(d => d.year === String(Number(year) - 1) && d.value != null) ?? null
+}
 
 type ModalData = {
   label: string
@@ -50,12 +82,14 @@ function Stat({ icon: Icon, label, value, change, color, sparkData, onExpand }: 
   )
 }
 
-function TrendCard({ icon: Icon, label, value, unit, data, color, wide, onExpand }: {
-  icon: React.ElementType; label: string; value: string; unit?: string; data: WbDataPoint[]; color: string; wide?: boolean; onExpand?: () => void
+function TrendCard({ icon: Icon, label, value, unit, data, color, wide, onExpand, delta, spark }: {
+  icon: React.ElementType; label: string; value: string; unit?: string; data: WbDataPoint[]; color: string; wide?: boolean; onExpand?: () => void; delta?: number; spark?: WbDataPoint[]
 }) {
+  const view = spark && spark.length > 1 ? spark : data
   const first = data[0]?.value ?? 0
   const last = data[data.length - 1]?.value ?? 0
-  const dir = last >= first
+  const change = delta ?? pctChange(last, first)
+  const up = change >= 0
   return (
     <div onClick={onExpand} style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-lg)', padding: '1rem 1.1rem', boxShadow: 'var(--shadow-sm)', cursor: onExpand ? 'pointer' : undefined, transition: 'box-shadow .15s, border-color .15s', position: 'relative' }}
       onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.boxShadow = `0 4px 16px ${color}15` }}
@@ -73,34 +107,104 @@ function TrendCard({ icon: Icon, label, value, unit, data, color, wide, onExpand
         {unit && <span style={{ fontSize: '.6rem', color: 'var(--text-tertiary)' }}>{unit}</span>}
       </div>
       <div style={{ marginTop: '.5rem' }}>
-        <LineChart data={data} color={color} height={wide ? 85 : 72} showArea formatValue={() => ''} />
+        <LineChart data={view} color={color} height={wide ? 85 : 72} showArea formatValue={() => ''} />
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.52rem', color: 'var(--text-tertiary)', marginTop: '.25rem' }}>
-        <span>{data[0]?.year}</span>
-        <span>{data[data.length - 1]?.year}</span>
+        <span>{view[0]?.year}</span>
+        <span>{view[view.length - 1]?.year}</span>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.52rem', color: 'var(--text-tertiary)', marginTop: '.25rem' }}>
-        <span style={{ color: dir ? 'var(--primary)' : 'var(--danger)', fontWeight: 600 }}>
-          {dir ? '↑' : '↓'} {Math.abs(pctChange(last, first)).toFixed(1)}% over period
+        <span style={{ color: up ? 'var(--primary)' : 'var(--danger)', fontWeight: 600 }}>
+          {up ? '↑' : '↓'} {Math.abs(change).toFixed(1)}% {delta != null ? 'vs prev year' : 'over period'}
         </span>
       </div>
     </div>
   )
 }
 
+function PanelSkeleton() {
+  return (
+    <article className="panel" style={{ marginBottom: '1rem' }}>
+      <span className="sk" style={{ width: 130, height: 11, marginBottom: '.55rem' }} />
+      <span className="sk" style={{ width: 280, height: 22, marginBottom: '.5rem' }} />
+      <span className="sk" style={{ width: '65%', height: 12, marginBottom: '.9rem' }} />
+      <span className="sk" style={{ width: '100%', height: 170 }} />
+      <div className="grid-4" style={{ marginTop: '.8rem', marginBottom: 0 }}>
+        {[0, 1, 2, 3].map(i => <span key={i} className="sk" style={{ width: '100%', height: 110 }} />)}
+      </div>
+    </article>
+  )
+}
+
+function EconomySkeleton() {
+  return (
+    <div className="content-wrap" aria-busy="true" aria-label="Loading economy data">
+      <div className="eco-hero">
+        <div className="eco-hero-grid">
+          <div>
+            <span className="sk" style={{ width: 150, height: 11, background: 'rgba(255,255,255,.2)' }} />
+            <span className="sk" style={{ width: '65%', height: 46, margin: '.55rem 0', background: 'rgba(255,255,255,.2)' }} />
+            <span className="sk" style={{ width: '85%', height: 13, background: 'rgba(255,255,255,.15)' }} />
+            <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1.15rem', flexWrap: 'wrap' }}>
+              {[0, 1, 2, 3].map(i => <span key={i} className="sk" style={{ width: 72, height: 36, background: 'rgba(255,255,255,.15)' }} />)}
+            </div>
+          </div>
+          <div>
+            <span className="sk" style={{ width: 140, height: 11, marginBottom: '.5rem', background: 'rgba(255,255,255,.15)' }} />
+            <span className="sk" style={{ width: '100%', height: 150, background: 'rgba(255,255,255,.12)' }} />
+          </div>
+        </div>
+      </div>
+
+      <nav className="eco-nav" aria-hidden="true">
+        {['01 · Growth', '02 · Prices & money', '03 · People', '04 · Structure', '05 · World outlook'].map(s => <span key={s}>{s}</span>)}
+      </nav>
+
+      <section className="grid-auto" style={{ marginBottom: '1rem' }}>
+        {[0, 1, 2, 3].map(i => (
+          <article key={i} className="panel" style={{ padding: '1.1rem 1.2rem' }}>
+            <span className="sk" style={{ width: 110, height: 11, marginBottom: '.6rem' }} />
+            <span className="sk" style={{ width: 90, height: 26, marginBottom: '.6rem' }} />
+            <span className="sk" style={{ width: '100%', height: 30 }} />
+          </article>
+        ))}
+      </section>
+
+      <PanelSkeleton />
+      <PanelSkeleton />
+    </div>
+  )
+}
+
 export default function EconomyPage() {
   const [data, setData] = useState<EconomyData | null>(null)
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [modal, setModal] = useState<ModalData | null>(null)
   const [chartType, setChartType] = useState<'area' | 'line' | 'bar'>('area')
+  const [timeRange, setTimeRange] = useState<RangeKey>('5')
   const [liveNrb, setLiveNrb] = useState<number | null>(null)
+  const [imfSource, setImfSource] = useState<string | null>(null)
 
   useEffect(() => {
     fetchEconomyData()
-      .then(setData)
+      .then(async d => {
+        // IMF's direct DataMapper host is Akamai-blocked from some networks,
+        // which empties every IMF series. Backfill them from our DBnomics-proxied
+        // API route (same WEO dataset) so the outlook cards still populate.
+        const imfKeys = ['imfGdpGrowth', 'imfInflation', 'imfUnemployment', 'imfCurrentAccount', 'imfGovtDebt', 'imfFiscalBalance'] as const
+        if (imfKeys.some(k => !d[k].length)) {
+          try {
+            const res = await fetch('/api/imf')
+            if (res.ok) {
+              const { series, version } = (await res.json()) as { series?: Partial<EconomyData>; version?: string }
+              if (series) d = { ...d, ...series }
+              if (version) setImfSource(`IMF WEO ${version}`)
+            }
+          } catch {}
+        }
+        setData(d)
+      })
       .catch(() => setError('Failed to load economy data'))
-      .finally(() => setLoading(false))
     let cancelled = false
     getNrbUsdRate().then(r => { if (!cancelled && r) setLiveNrb(r) }).catch(() => {})
     return () => { cancelled = true }
@@ -108,21 +212,16 @@ export default function EconomyPage() {
 
   const latest = (arr: WbDataPoint[]) => arr[arr.length - 1]
   const prev = (arr: WbDataPoint[]) => arr.length >= 2 ? arr[arr.length - 2] : null
-  const openModal = useCallback((m: ModalData) => { setModal(m); setChartType('area') }, [])
+  const openModal = useCallback((m: ModalData) => { setModal(m); setChartType('area'); setTimeRange('5') }, [])
+  const modalFmt = useCallback((m: ModalData) => (v: number) => m.unit?.includes('%') ? `${v.toFixed(1)}%` : v >= 1e9 ? formatUsd(v) : formatNum(v), [])
 
-  if (loading) return (
+  if (error) return (
     <div style={{ textAlign: 'center', padding: '6rem 2rem' }}>
-      <div style={{ width: 36, height: 36, border: '3px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin .6s linear infinite', margin: '0 auto 1.2rem' }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-      <p className="muted" style={{ fontSize: '.85rem' }}>Fetching live data from World Bank Open Data API...</p>
+      <p className="muted">{error}</p>
     </div>
   )
 
-  if (error || !data) return (
-    <div style={{ textAlign: 'center', padding: '6rem 2rem' }}>
-      <p className="muted">{error || 'No data available'}</p>
-    </div>
-  )
+  if (!data) return <EconomySkeleton />
 
   const gdpL = latest(data.gdp)
   const gdpGrL = latest(data.gdpGrowth)
@@ -146,6 +245,41 @@ export default function EconomyPage() {
   const tradeBalance = (expL?.value ?? 0) - (impL?.value ?? 0)
   const liveNprRate = data.exchangeRate.length ? (latest(data.exchangeRate)?.value ?? 133.5) : 133.5
 
+  // World Outlook — every IMF WEO series we have. A series the source can't
+  // supply is simply absent from /api/imf, so its card is never rendered.
+  const fmtPct = (v: number) => `${v.toFixed(1)}%`
+  const outlookCards: { icon: React.ElementType; label: string; d: WbDataPoint[]; color: string; fmt: (v: number) => string; unit: string }[] = [
+    { icon: TrendingUp, label: 'Real GDP growth', d: data.imfGdpGrowth, color: 'var(--primary)', fmt: fmtPct, unit: 'annual %' },
+    { icon: Globe2, label: 'GDP, nominal', d: data.imfNominalGdp, color: '#6366f1', fmt: formatUsd, unit: 'US$, current prices' },
+    { icon: Users, label: 'GDP per capita', d: data.imfGdpPerCapita, color: '#3b82f6', fmt: formatUsd, unit: 'US$ per person' },
+    { icon: Globe2, label: 'GDP (PPP)', d: data.imfGdpPpp, color: '#8b5cf6', fmt: formatUsd, unit: 'international $, PPP' },
+    { icon: Users, label: 'GDP per capita (PPP)', d: data.imfPppPerCapita, color: '#8b5cf6', fmt: formatUsd, unit: 'int$ PPP per person' },
+    { icon: BarChart3, label: 'Inflation', d: data.imfInflation, color: 'var(--warning)', fmt: fmtPct, unit: 'average consumer prices' },
+    { icon: Users, label: 'Unemployment', d: data.imfUnemployment, color: 'var(--danger)', fmt: fmtPct, unit: '% of labor force' },
+    { icon: Globe2, label: 'Current account', d: data.imfCurrentAccount, color: '#6366f1', fmt: fmtPct, unit: '% of GDP' },
+    { icon: Banknote, label: 'Investment', d: data.imfInvestment, color: '#3b82f6', fmt: fmtPct, unit: '% of GDP' },
+    { icon: Landmark, label: 'Govt revenue', d: data.imfGovtRevenue, color: '#16a34a', fmt: fmtPct, unit: '% of GDP' },
+    { icon: Landmark, label: 'Govt expenditure', d: data.imfGovtExpenditure, color: '#e0a351', fmt: fmtPct, unit: '% of GDP' },
+    { icon: Landmark, label: 'Govt gross debt', d: data.imfGrossDebt, color: '#e11d48', fmt: fmtPct, unit: '% of GDP' },
+    { icon: Landmark, label: 'Govt net debt', d: data.imfGovtDebt, color: '#6366f1', fmt: fmtPct, unit: '% of GDP' },
+    { icon: Banknote, label: 'Fiscal balance', d: data.imfFiscalBalance, color: 'var(--warning)', fmt: fmtPct, unit: '% of GDP (negative = deficit)' },
+  ]
+  // Forecast cards track the *current* year, not the far-year projection, and
+  // compare it with the previous year so the % is a real year-on-year move.
+  const outlook = outlookCards.filter(c => c.d.length > 0).map(c => {
+    const cur = pickCurrent(c.d)
+    const pv = cur ? pickPrev(c.d, cur.year) : null
+    const delta = cur && pv && pv.value ? pctChange(cur.value ?? 0, pv.value) : undefined
+    return { ...c, cur, delta }
+  })
+  const outlookYear = outlook.length ? String(Math.max(...outlook.map(c => Number(c.cur?.year ?? 0)))) : ''
+
+  const imfCur = pickCurrent(data.imfGdpGrowth)
+  const imfPrev = imfCur ? pickPrev(data.imfGdpGrowth, imfCur.year) : null
+
+  const modalShown = modal ? rangeData(modal.data, timeRange) : []
+  const refX = modalShown.some(d => d.year === CURRENT_YEAR) ? CURRENT_YEAR : undefined
+
   return (
     <>
       <div className="content-wrap">
@@ -157,12 +291,12 @@ export default function EconomyPage() {
               <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(2.2rem, 4vw, 3.2rem)', fontWeight: 500, letterSpacing: '-.04em', margin: '.3rem 0 .4rem', lineHeight: 1.02 }}>
                 {formatUsd(gdpL?.value ?? 0)}
               </h1>
-              <p style={{ fontSize: '.8rem', opacity: .85, margin: 0 }}>Gross Domestic Product · {gdpL?.year} estimate · रु {((gdpL?.value ?? 0) * (liveNrb ?? liveNprRate) / 1e12).toFixed(2)}T at {liveNrb ? 'today’s NRB rate' : 'official rate'}</p>
+              <p style={{ fontSize: '.8rem', opacity: .85, margin: 0 }}>Gross Domestic Product · {gdpL?.year} estimate · {formatNpr((gdpL?.value ?? 0) * (liveNrb ?? liveNprRate))} at {liveNrb ? 'today’s NRB rate' : 'official rate'}</p>
               <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1.1rem', flexWrap: 'wrap' }}>
                 {[
                   { label: 'Growth', val: `${(gdpGrL?.value ?? 0).toFixed(1)}%` },
-                  { label: 'Per capita', val: `$${(gdpPcL?.value ?? 0).toLocaleString()}` },
-                  { label: 'PPP per capita', val: `$${(gdpPppL?.value ?? 0).toLocaleString()}` },
+                  { label: 'Per capita', val: formatUsd(gdpPcL?.value ?? 0) },
+                  { label: 'PPP per capita', val: formatUsd(gdpPppL?.value ?? 0) },
                   { label: 'Inflation', val: `${(inflL?.value ?? 0).toFixed(1)}%` },
                 ].map(item => (
                   <div key={item.label}>
@@ -173,7 +307,7 @@ export default function EconomyPage() {
               </div>
               {liveNrb && (
                 <div style={{ display: 'inline-block', marginTop: '1rem', background: 'rgba(255,255,255,.14)', borderRadius: 20, padding: '.35rem .8rem', fontSize: '.7rem', fontWeight: 700 }}>
-                  Live NRB fixing today: रु {liveNrb.toFixed(2)} / $
+                  Live NRB fixing today: {formatFxPair(liveNrb)}
                 </div>
               )}
             </div>
@@ -199,6 +333,9 @@ export default function EconomyPage() {
           <Stat icon={BarChart3} label="Inflation (CPI)" value={`${(inflL?.value ?? 0).toFixed(1)}%`} change={inflL && data.inflation.length >= 2 ? -(pctChange(inflL.value ?? 0, (prev(data.inflation)?.value ?? 0))) : undefined} color="var(--warning)" sparkData={data.inflation} onExpand={() => openModal({ label: 'Inflation (CPI)', value: `${(inflL?.value ?? 0).toFixed(1)}%`, unit: 'annual %', data: data.inflation, color: 'var(--warning)', icon: BarChart3 })} />
           <Stat icon={Globe2} label="Exports" value={formatUsd(expL?.value ?? 0)} change={expL && data.exports.length >= 2 ? pctChange(expL.value ?? 0, (prev(data.exports)?.value ?? 0)) : undefined} color="var(--primary)" sparkData={data.exports} onExpand={() => openModal({ label: 'Exports', value: formatUsd(expL?.value ?? 0), data: data.exports, color: 'var(--primary)', icon: Globe2 })} />
           <Stat icon={Users} label="Unemployment" value={`${(unempL?.value ?? 0).toFixed(1)}%`} color="var(--danger)" sparkData={data.unemployment} onExpand={() => openModal({ label: 'Unemployment', value: `${(unempL?.value ?? 0).toFixed(1)}%`, unit: 'of labor force', data: data.unemployment, color: 'var(--danger)', icon: Users })} />
+          {imfCur && (
+            <Stat icon={ChartLine} label={`GDP forecast · ${imfCur.year}`} value={`${(imfCur.value ?? 0).toFixed(1)}%`} change={imfPrev && imfPrev.value ? pctChange(imfCur.value ?? 0, imfPrev.value) : undefined} color="#6366f1" sparkData={data.imfGdpGrowth.slice(-16)} onExpand={() => openModal({ label: 'Real GDP growth (IMF forecast)', value: `${(imfCur.value ?? 0).toFixed(1)}%`, unit: `annual %, incl. forecasts to ${outlookYear}`, data: data.imfGdpGrowth, color: '#6366f1', icon: ChartLine })} />
+          )}
         </section>
 
         {/* ─── 01 GROWTH ─── */}
@@ -211,7 +348,7 @@ export default function EconomyPage() {
             <div style={{ marginTop: '.6rem', padding: '.65rem', background: 'var(--bg-sunken)', borderRadius: '8px', fontSize: '.7rem', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
               Nepal grew {(gdpGrL?.value ?? 0).toFixed(1)}% in {gdpGrL?.year}.
               {inflL && (inflL.value ?? 0) < 5 ? ` Inflation eased to ${(inflL.value ?? 0).toFixed(1)}%.` : ` Inflation stood at ${(inflL?.value ?? 0).toFixed(1)}%.`}
-              {` `}GDP per capita reached ${(gdpPcL?.value ?? 0).toLocaleString()}.
+              {` `}GDP per capita reached {formatUsd(gdpPcL?.value ?? 0)}.
             </div>
             <div className="grid-4" style={{ marginTop: '.7rem', marginBottom: 0 }}>
               <TrendCard icon={Banknote} label="Investment" value={`${(latest(data.investment)?.value ?? 0).toFixed(1)}%`} unit={`of GDP · ${latest(data.investment)?.year}`} data={data.investment} color="#3b82f6" onExpand={() => openModal({ label: 'Investment (% of GDP)', value: `${(latest(data.investment)?.value ?? 0).toFixed(1)}%`, unit: 'gross capital formation', data: data.investment, color: '#3b82f6', icon: Banknote })} />
@@ -260,19 +397,19 @@ export default function EconomyPage() {
                 </div>
               </div>
               <div>
-                <p className="eyebrow" style={{ margin: '0 0 .3rem', fontSize: '.55rem' }}>रु PER US DOLLAR</p>
+                <p className="eyebrow" style={{ margin: '0 0 .3rem', fontSize: '.55rem' }}>{NPR_SYMBOL} PER US DOLLAR</p>
                 {data.exchangeRate.length ? (
                   <>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: '.4rem' }}>
-                      <strong style={{ fontSize: '1.3rem', letterSpacing: '-.03em' }}>रु {(latest(data.exchangeRate)?.value ?? 0).toFixed(2)}</strong>
-                      <span style={{ fontSize: '.6rem', color: 'var(--text-tertiary)' }}>$1 · {latest(data.exchangeRate)?.year}</span>
+                      <strong style={{ fontSize: '1.3rem', letterSpacing: '-.03em' }}>{formatNprRate(latest(data.exchangeRate)?.value ?? 0)}</strong>
+                      <span style={{ fontSize: '.6rem', color: 'var(--text-tertiary)' }}>{USD_SYMBOL}1 · {latest(data.exchangeRate)?.year}</span>
                     </div>
                     <div style={{ marginTop: '.4rem' }}>
-                      <LineChart data={data.exchangeRate} color="#e0a351" height={110} formatValue={v => `रु ${v.toFixed(2)}`} title="Exchange rate trend" />
+                      <LineChart data={data.exchangeRate} color="#e0a351" height={110} formatValue={v => formatNprRate(v)} title="Exchange rate trend" />
                     </div>
                     {liveNrb && (
                       <div style={{ marginTop: '.4rem', padding: '.5rem .65rem', background: 'var(--primary-50)', borderRadius: 8, fontSize: '.68rem', fontWeight: 700, color: 'var(--primary)' }}>
-                        Live NRB fixing today: रु {liveNrb.toFixed(2)}
+                        Live NRB fixing today: {formatNprRate(liveNrb)}
                       </div>
                     )}
                   </>
@@ -301,8 +438,8 @@ export default function EconomyPage() {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.35rem' }}>
                   {[
-                    { label: 'Per capita GDP', val: `$${(gdpPcL?.value ?? 0).toLocaleString()}` },
-                    { label: 'Per capita PPP', val: `$${(gdpPppL?.value ?? 0).toLocaleString()}` },
+                    { label: 'Per capita GDP', val: formatUsd(gdpPcL?.value ?? 0) },
+                    { label: 'Per capita PPP', val: formatUsd(gdpPppL?.value ?? 0) },
                     { label: 'Unemployment', val: `${(unempL?.value ?? 0).toFixed(1)}%` },
                     { label: 'Life expectancy', val: lifeL ? `${(lifeL.value ?? 0).toFixed(1)} yrs` : '—' },
                   ].map(item => (
@@ -355,18 +492,15 @@ export default function EconomyPage() {
 
         {/* ─── 05 WORLD OUTLOOK ─── */}
         <section id="outlook" className="eco-section">
-          {data.imfGdpGrowth.length > 0 && (
+          {outlook.length > 0 && (
             <article className="panel" style={{ marginBottom: '1rem' }}>
-              <p className="eyebrow">05 · WORLD OUTLOOK · IMF FORECASTS TO 2030</p>
+              <p className="eyebrow">05 · WORLD OUTLOOK · IMF FORECASTS TO {outlookYear}</p>
               <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: '1.3rem', margin: '.15rem 0 0' }}>What the world expects of Nepal</h3>
-              <p className="muted" style={{ marginBottom: '.6rem' }}>IMF projections, including forecast years beyond {latest(data.gdpGrowth)?.year}. Click any card to explore.</p>
+              <p className="muted" style={{ marginBottom: '.6rem' }}>IMF World Economic Outlook — history plus projections beyond {latest(data.gdpGrowth)?.year}{imfSource ? ` · via ${imfSource}` : ''}. Click any card to explore.</p>
               <div className="grid-auto">
-                <TrendCard icon={TrendingUp} label="Real GDP growth" value={`${(latest(data.imfGdpGrowth)?.value ?? 0).toFixed(1)}%`} unit={`${latest(data.imfGdpGrowth)?.year} projection`} data={data.imfGdpGrowth} color="var(--primary)" wide onExpand={() => openModal({ label: 'Real GDP growth (IMF)', value: `${(latest(data.imfGdpGrowth)?.value ?? 0).toFixed(1)}%`, unit: 'annual %, incl. forecasts', data: data.imfGdpGrowth, color: 'var(--primary)', icon: TrendingUp })} />
-                <TrendCard icon={BarChart3} label="Inflation" value={`${(latest(data.imfInflation)?.value ?? 0).toFixed(1)}%`} unit={`${latest(data.imfInflation)?.year} projection`} data={data.imfInflation} color="var(--warning)" wide onExpand={() => openModal({ label: 'Inflation (IMF)', value: `${(latest(data.imfInflation)?.value ?? 0).toFixed(1)}%`, unit: 'annual %, incl. forecasts', data: data.imfInflation, color: 'var(--warning)', icon: BarChart3 })} />
-                <TrendCard icon={Users} label="Unemployment" value={data.imfUnemployment.length ? `${(latest(data.imfUnemployment)?.value ?? 0).toFixed(1)}%` : 'N/A'} unit={data.imfUnemployment.length ? `${latest(data.imfUnemployment)?.year} projection` : undefined} data={data.imfUnemployment} color="var(--danger)" wide onExpand={() => openModal({ label: 'Unemployment (IMF)', value: `${(latest(data.imfUnemployment)?.value ?? 0).toFixed(1)}%`, unit: '% of labor force, incl. forecasts', data: data.imfUnemployment, color: 'var(--danger)', icon: Users })} />
-                <TrendCard icon={Globe2} label="Current account" value={data.imfCurrentAccount.length ? `${(latest(data.imfCurrentAccount)?.value ?? 0).toFixed(1)}%` : 'N/A'} unit={data.imfCurrentAccount.length ? `% of GDP · ${latest(data.imfCurrentAccount)?.year}` : undefined} data={data.imfCurrentAccount} color="#6366f1" wide onExpand={() => openModal({ label: 'Current account balance (IMF)', value: `${(latest(data.imfCurrentAccount)?.value ?? 0).toFixed(1)}%`, unit: '% of GDP, incl. forecasts', data: data.imfCurrentAccount, color: '#6366f1', icon: Globe2 })} />
-                <TrendCard icon={Landmark} label="Govt net debt" value={data.imfGovtDebt.length ? `${(latest(data.imfGovtDebt)?.value ?? 0).toFixed(1)}%` : 'N/A'} unit={data.imfGovtDebt.length ? `% of GDP · ${latest(data.imfGovtDebt)?.year} projection` : undefined} data={data.imfGovtDebt} color="#6366f1" wide onExpand={() => openModal({ label: 'Govt net debt (IMF)', value: `${(latest(data.imfGovtDebt)?.value ?? 0).toFixed(1)}%`, unit: '% of GDP, incl. forecasts', data: data.imfGovtDebt, color: '#6366f1', icon: Landmark })} />
-                <TrendCard icon={Banknote} label="Fiscal balance" value={data.imfFiscalBalance.length ? `${(latest(data.imfFiscalBalance)?.value ?? 0).toFixed(1)}%` : 'N/A'} unit={data.imfFiscalBalance.length ? `% of GDP · ${latest(data.imfFiscalBalance)?.year} projection` : undefined} data={data.imfFiscalBalance} color={((latest(data.imfFiscalBalance)?.value ?? 0) >= 0) ? 'var(--primary)' : 'var(--danger)'} wide onExpand={() => openModal({ label: 'Fiscal balance (IMF)', value: `${(latest(data.imfFiscalBalance)?.value ?? 0).toFixed(1)}%`, unit: '% of GDP, incl. forecasts (negative = deficit)', data: data.imfFiscalBalance, color: 'var(--warning)', icon: Banknote })} />
+                {outlook.map(c => (
+                  <TrendCard key={c.label} icon={c.icon} label={c.label} value={c.cur ? c.fmt(c.cur.value ?? 0) : '—'} unit={c.cur ? `${c.unit} · ${c.cur.year}${Number(c.cur.year) >= Number(CURRENT_YEAR) ? ' forecast' : ''}` : c.unit} data={c.d} spark={c.d.slice(-16)} delta={c.delta} color={c.color} wide onExpand={() => openModal({ label: `${c.label} (IMF)`, value: c.cur ? c.fmt(c.cur.value ?? 0) : '—', unit: `${c.unit}, incl. forecasts`, data: c.d, color: c.color, icon: c.icon })} />
+                ))}
               </div>
             </article>
           )}
@@ -380,6 +514,7 @@ export default function EconomyPage() {
             <p style={{ margin: '.1rem 0 0', fontSize: '.62rem', color: 'var(--text-secondary)' }}>
               Historical data from api.worldbank.org, projections from imf.org DataMapper, today&apos;s rate from nrb.org.np · Hover any chart for exact values
               <a href="https://data.worldbank.org/country/nepal" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 600, marginLeft: '.3rem' }}>View on World Bank <ArrowUpRight size={10} style={{ display: 'inline' }} /></a>
+              <a href="https://www.imf.org/en/Publications/WEO" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 600, marginLeft: '.5rem' }}>IMF World Economic Outlook <ArrowUpRight size={10} style={{ display: 'inline' }} /></a>
             </p>
           </div>
         </div>
@@ -415,16 +550,28 @@ export default function EconomyPage() {
                 </div>
               </div>
               <div style={{ padding: '1.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.5rem', marginBottom: '1rem' }}>
+                  <span style={{ fontSize: '.6rem', color: 'var(--text-tertiary)' }}>
+                    {modalShown.length > 1 ? `${modalShown[0].year}–${modalShown[modalShown.length - 1].year} · hover for change vs start` : 'No data in range'}
+                  </span>
+                  <div style={{ display: 'flex', background: 'var(--bg-sunken)', borderRadius: '8px', padding: '3px' }}>
+                    {RANGE_OPTIONS.map(o => (
+                      <button key={o.key} onClick={() => setTimeRange(o.key)} style={{ padding: '.3rem .6rem', borderRadius: '6px', fontSize: '.62rem', fontWeight: 700, border: 'none', cursor: 'pointer', background: timeRange === o.key ? 'var(--bg-elevated)' : 'transparent', color: timeRange === o.key ? 'var(--text)' : 'var(--text-tertiary)', boxShadow: timeRange === o.key ? 'var(--shadow-sm)' : 'none', transition: 'all .15s' }}>
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 {chartType === 'bar' ? (
-                  <BarChart data={modal.data} height={320} color={modal.color} formatValue={v => modal.unit?.includes('%') ? `${v.toFixed(1)}%` : v >= 1000000000 ? formatUsd(v) : v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `${(v / 1000).toFixed(1)}K` : v.toFixed(1)} />
+                  <BarChart data={modalShown} height={320} color={modal.color} showDelta yAxis refX={refX} refLabel={`${CURRENT_YEAR} · now`} formatValue={modalFmt(modal)} />
                 ) : (
-                  <LineChart data={modal.data} color={modal.color} height={320} showArea={chartType === 'area'} formatValue={v => modal.unit?.includes('%') ? `${v.toFixed(1)}%` : v >= 1000000000 ? formatUsd(v) : v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `${(v / 1000).toFixed(1)}K` : v.toFixed(1)} />
+                  <LineChart data={modalShown} color={modal.color} height={320} showArea={chartType === 'area'} showDelta yAxis refX={refX} refLabel={`${CURRENT_YEAR} · now`} formatValue={modalFmt(modal)} />
                 )}
                 {(() => {
-                  const sorted = [...modal.data].filter(d => d.value != null).sort((a, b) => (a.value ?? 0) - (b.value ?? 0))
+                  const sorted = [...modalShown].filter(d => d.value != null).sort((a, b) => (a.value ?? 0) - (b.value ?? 0))
                   const low = sorted[0]
                   const high = sorted[sorted.length - 1]
-                  const fmt = (v: number) => modal.unit?.includes('%') ? `${v.toFixed(1)}%` : v >= 1000000000 ? formatUsd(v) : v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `${(v / 1000).toFixed(1)}K` : v.toFixed(1)
+                  const fmt = modalFmt(modal)
                   return (
                     <div style={{ marginTop: '1.2rem', borderTop: '1px solid var(--border-light)', paddingTop: '1rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.6rem' }}>
                       <div style={{ padding: '.7rem', background: 'var(--primary-50)', borderRadius: '10px' }}>

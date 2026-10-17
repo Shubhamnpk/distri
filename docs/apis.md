@@ -116,7 +116,7 @@ Conventions across all clients (`lib/*.ts`):
 - Used: `/incident/`, `/alert/`, `/earthquake/`, `/loss/`, `/project/`, `/rain-stations/`, `/river-stations/`, `/{province,district,municipality,ward}/`.
 - Shape: DRF `{count, next, previous, results[]}` — client takes `?limit=` (default 10) and returns `{count, results}`. Note: `count` can be a 64-bit sentinel — treat as opaque.
 - Shown: /environment incidents + alerts. Geo backbone reserved for map joins.
-- Map joins (`lib/district-geo.ts`, `/projects/map`): `/district/` rows carry `centroid` + `bbox` + `province` number + `title_en` (77 districts, tiny, 12s timeout, module-cached). District polygons come BUNDLED per province from `public/geo/districts/<1-7>.geojson` (split from the 1.2MB monolith — 76–226KB each, fetched ONLY when its province opens, cached per province; exact `{DISTRICT, HQ, PROVINCE}` join). DataNepal `place_boundaries.json` is a last-resort fallback. If the district API stalls, pins/zoom/filter derive from the bundled polygons — drill-down never blanks. Our 30 projects have no GPS — pinned to matched-district centroids via `lib/geo:matchDistricts` (+ deterministic jitter), always labeled ≈ approx; national-scope projects stay unpinned in the side list.
+- Map joins (`lib/district-geo.ts`, `/projects/map`): `/district/` rows carry `centroid` + `bbox` + `province` number + `title_en` (77 districts, tiny, 12s timeout, module-cached). District polygons come BUNDLED per province from `public/geo/districts/<1-7>.geojson` (split from the 1.2MB monolith — 76–226KB each, fetched ONLY when its province opens, cached per province; exact `{DISTRICT, HQ, PROVINCE}` join). DataNepal `place_boundaries.json` is a last-resort fallback. If the district API stalls, pins/zoom/filter derive from the bundled polygons — drill-down never blanks. Our 32 projects use researched sites first (`lib/project-coords.ts`: dam/airfield/temple GPS, confidence-labeled) falling back to matched-district centroids via `lib/geo:matchDistricts` (+ deterministic jitter), always labeled ◎ exact vs ≈ approx; national-scope projects stay unpinned in the side list.
 
 ## 9. DHM weather API (`lib/dhm.ts`)
 
@@ -127,6 +127,7 @@ Conventions across all clients (`lib/*.ts`):
 - Shown: /environment outlook grid (first 8 stations with forecasts; rain badge > 40%).
 - Shown: /environment outlook grid (first 8 stations with forecasts; rain badge > 40%).
 - Dead end: `hydrology.gov.np` realtime is socket.io SPA with no REST — use BIPAD station mirrors instead.
+- DHM's `/weather` payload is capped at **~19 cities** and `/manual-observation` at **~21** — that is the whole network DHM publishes (not a client bug). For national coverage use the BIPAD hydrology mirrors (section 17): ~660 rain gauges + ~280 river/water-level stations.
 
 ## 10. World Bank Projects API (`lib/wb-projects.ts`)
 
@@ -156,7 +157,7 @@ Conventions across all clients (`lib/*.ts`):
 | Source | Why no client | Path forward |
 |---|---|---|
 | NSO Census 2021 results site | Original hosts flaky; DataNepal mirror covers it | Use `lib/datanepal.ts` |
-| Niti/Naxa Hydropower Portal (572 projects) | HTML tables + **keyless JSON**: `/api/district/`, `/api/gapanapa/`, `hydro.js` GeoJSON points (name/MW/river/year/coords) — wired via `lib/naxa.ts` for the national atlas | Plotted live on `/projects/map` |
+| Niti/Naxa Hydropower Portal (572 projects) | **Fully wired**: full register parsed server-side by `app/api/hydro/route.ts` from the `/core/datasets/` HTML table (the portal's own `hydro.js` carries only 10 map points) | 572 GPS pins on `/projects/map` + `HydroAtlas` |
 | HDX COD-AB + COD-PS | Verified CKAN (`data.humdata.org/api/3/action/package_search`) | `lib/hdx.ts` for map shapes + p-codes |
 | UNICEF SDMX (`sdmx.data.unicef.org`) | Needs `Accept: application/vnd.sdmx.data+json;version=2.0.0` header + SDMX-JSON parser | Small client, header first |
 | UN Data Portal (WPP) | Locations/indicators verified; data endpoint returned 401 with guessed params | One param/header pass |
@@ -167,7 +168,7 @@ Conventions across all clients (`lib/*.ts`):
 
 ## 14. Explicit dead ends — do not integrate
 
-IMF direct from sandbox (403, works in prod) · NSO CKAN `data.nsonepal.gov.np` (unreachable) · PPMO/bolpatra (403 bot-wall) · NOC official (HTML ticker only) + `noc-nepal-api` host (DNS fail) · gold mirror `sabinmagar` (404) · CoinGecko (DNS fail from sandbox) · FRED/ITC TradeMap/Swippee (keys) · IRMIS/MeroShare/TMS (auth) · FENEGOSIDA history (login) · REST Countries (now key-gated) · ReliefWeb v1 (dead; v2 needs approved appname) · IATI live API (needs subscription key — use bulk dumps) · ACLED / FIRMS / GFW / ElectricityMaps / NewsData (keys) · Kalimati prices (host unreachable — recheck from Nepal IP) · `welcomenepal.com` (hijacked — use `tourism.gov.np`) · DoR old road-network JSON (gone) · NEPSE official NOTS (session-gated — mirror-first).
+IMF direct from sandbox (403, works in prod) · NSO CKAN `data.nsonepal.gov.np` (unreachable) · PPMO/bolpatra (403 bot-wall) · NOC official (HTML ticker only) + `noc-nepal-api` host (DNS fail) · gold mirror `sabinmagar` (404) · CoinGecko (DNS fail from sandbox) · FRED/ITC TradeMap/Swippee (keys) · IRMIS/MeroShare/TMS (auth) · FENEGOSIDA history (login) · REST Countries (now key-gated) · ReliefWeb v1 (dead; v2 needs approved appname) · IATI live API (needs subscription key — use bulk dumps) · ACLED / FIRMS / GFW / ElectricityMaps / NewsData (keys) · Kalimati prices (host unreachable — recheck from Nepal IP) · `welcomenepal.com` (hijacked — use `tourism.gov.np`) · DoR old road-network JSON (gone; use ICIMOD ArcGIS road layer — section 17) · NEPSE official NOTS (session-gated — mirror-first).
 
 ## 15. Formatting & money
 
@@ -220,3 +221,12 @@ Two subagent sweeps probed ~30 company-data sources with real fetches. Integrate
 - **OpenCorporates** — no NP jurisdiction (404) + API needs token (401). **Crunchbase/LinkedIn/Clearbit** — paid/OAuth. **nepsealpha** — login-gated. **nepsetrading AI** — paywalled. **FNCCI `/members`** — 404 (use `/member/*.php`).
 - **NEPSE intraday shards, dividend file, OMF** — 404 (see yonepse notes above).
 - **Wikidata SPARQL** — sandbox timeout (REST works).
+
+## 17. National map data layers (`/projects/map`, `components/national-map.tsx`)
+
+- **Hydropower register** — `app/api/hydro/route.ts` fetches `https://hydro.naxa.com.np/core/datasets/` and parses the single `<table id="hydropower">` (572 rows, **92 columns**) into JSON: name, province, district, municipality, capacity MW, river, licence no/issue/validity, promoter, address, lon/lat, licence type. Revalidate 86400. The portal's own `/static/assets/data/hydro.js` carries only 10 map points — do not use it as the register. Total licensed ≈ 23,970 MW. **Licence-type split: Survey 311 · Generation 180 · Operation 81** — the only usable status signal; the richer columns (civil construction, electric generated, date of operation, affected households…) are all `0`/`False` stubs on every row. Client: `lib/hydro.ts:fetchHydroProjects()` (relative `/api/hydro`); `hydroKind()` maps to `operation`/`generation`/`survey` with `HYDRO_KIND_COLOR`/`HYDRO_KIND_LABEL`, a matching licence filter in the atlas panel, and drop-shaped divIcon pins sized by MW (CSS classes match the kind string exactly).
+- **Roads** — `lib/roads.ts` queries ICIMOD ArcGIS `https://geoapps.icimod.org/icimodarcgis/rest/services/Nepal/BaseMap/MapServer/2` (Road polyline layer), where `TYPE='Highway'` (~302 segments; Metalled 194, Gravelled 575, Main Trail 2953, Railway 12). Keyless, CORS-open, `f=geojson`, paged at the 1000-record cap. Revalidate 86400. Replacement for the dead DoR road JSON.
+- **Rain + river stations** — `lib/bipad.ts:fetchBipadRainStationsAll()` (~660 gauges) and `:fetchBipadRiverStationsAll()` (~280 water-level stations) walk the DRF `next` links (8 pages × 100). `count` on these resources is a 64-bit sentinel — never trust it, count the fetched rows. **Rain rows**: `averages[]` = 5 windows (`interval` 1/3/6/12/24 h, `value` mm + `status{danger,warning}`), `measuredOn`, `elevation`, `basin`, `description` (`"District,Municipality,Station,id"`), `affectedDemography`, numeric `district`/`province` codes. **River rows**: live `waterLevel`/`warningLevel`/`dangerLevel`/`waterLevelOn`/`steady`/`status` (`BELOW WARNING` / `ABOVE WARNING` / `ABOVE DANGER`) + `description`, `affectedDemography`. Note `status` also matches `WARNING` inside `BELOW WARNING LEVEL` — only treat the `ABOVE …` forms as warn/danger.
+- **Admin-name resolution** — station `district`/`province` are BIPAD numeric ids; resolve district names from the already-loaded `fetchBipadDistricts()` list (same `id`) and provinces from `PROVINCE_NUM_TO_NAME`. No extra endpoint needed. BIPAD geo routes are **singular** (`/province/`, `/district/`, `/municipality/`); the plural forms 404 and `?limit=` is ignored (each returns its full list).
+- **Panes** — the atlas puts polygons in a custom `shapes` pane (z 390) and all point markers in a `points` pane (z 620). Leaflet stacks by insertion order, so without this the async province/district/muni polygons load *after* the pins and swallow their clicks (the "pins only clickable after selecting a province" bug).
+
