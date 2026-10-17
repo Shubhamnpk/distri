@@ -29,6 +29,7 @@ const projectLinks = [
   { href: '/datasets', label: 'Open datasets' },
   { href: '/sources', label: 'Source registry' },
   { href: '/procurement', label: 'Tender archive' },
+  { href: '/releases', label: 'Release history' },
 ]
 
 export function Footer() {
