@@ -1692,12 +1692,12 @@ export const projects: Project[] = [
     "updated": "FY 2082/83",
     "spent": "42.8B",
     "target": "FY 2092/93 (NPC estimate)",
-    "source": "National Planning Commission — National Pride progress, FY 2082/83",
+    "source": "National Planning Commission - National Pride progress, FY 2082/83",
     "sourceUrl": "https://npc.gov.np/content/6836/overall-progress-statement-of-the-project-of/",
-    "image": "https://upload.wikimedia.org/wikipedia/commons/e/ed/Budhi_Gandaki%2C_Yaru_Bagar_to_Jagat%2C_Gorkha_District%2C_Manaslu_Trek%2C_Nepal_%2832019507937%29.jpg",
+    "image": "https://notebazar.com/wp-content/uploads/2024/09/Budhigandaki%20Hydropower.png",
     "gallery": [
-      "https://upload.wikimedia.org/wikipedia/commons/e/ed/Budhi_Gandaki%2C_Yaru_Bagar_to_Jagat%2C_Gorkha_District%2C_Manaslu_Trek%2C_Nepal_%2832019507937%29.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/2/28/Upper_Tamakoshi_Access_Tunnel.jpg"
+      "https://notebazar.com/wp-content/uploads/2024/09/Budhigandaki%20Hydropower.png",
+      "https://content.sharesansar.com/photos/FEB12/NewFolder/NewFolder/NewFolder/NewFolder/BudiGandaki_Hydroproject.jpg"
     ],
     "checklist": [
       {
@@ -1783,9 +1783,9 @@ export const projects: Project[] = [
     "updated": "7 Oct 2026",
     "spent": "73.6B",
     "target": "BS 2084/85 (extended)",
-    "source": "National Planning Commission — National Pride progress, FY 2082/83",
+    "source": "National Planning Commission - National Pride progress, FY 2082/83",
     "sourceUrl": "https://npc.gov.np/content/6836/overall-progress-statement-of-the-project-of/",
-    "image": "https://upload.wikimedia.org/wikipedia/commons/e/ed/Budhi_Gandaki%2C_Yaru_Bagar_to_Jagat%2C_Gorkha_District%2C_Manaslu_Trek%2C_Nepal_%2832019507937%29.jpg",
+    "image": "https://th.bing.com/th/id/R.a8bd696c47d26b3dedcd4c88cbd2a3d0?rik=C%2fRlwIAathqajw&pid=ImgRaw&r=0",
     "changeLog": [
       {
         "date": "7 Oct 2026",
@@ -1855,9 +1855,9 @@ export const projects: Project[] = [
     "updated": "3 Aug 2026",
     "spent": "73.38B",
     "target": "FY 2086/87 (NPC estimate)",
-    "source": "National Planning Commission — National Pride progress, FY 2082/83",
+    "source": "National Planning Commission - National Pride progress, FY 2082/83",
     "sourceUrl": "https://npc.gov.np/content/6836/overall-progress-statement-of-the-project-of/",
-    "image": "/images/nepal-infrastructure.png",
+    "image": "https://www.eaarthik.com/wp-content/uploads/2020/11/Hulaki-Rajmarg.jpg",
     "changeLog": [
       {
         "date": "3 Aug 2026",
@@ -2019,7 +2019,7 @@ export const projects: Project[] = [
     "updated": "FY 2082/83",
     "spent": "7.28B",
     "target": "FY 2085/86 (NPC estimate)",
-    "source": "National Planning Commission — National Pride progress, FY 2082/83",
+    "source": "National Planning Commission - National Pride progress, FY 2082/83",
     "sourceUrl": "https://npc.gov.np/content/6836/overall-progress-statement-of-the-project-of/",
     "image": "/images/nepal-infrastructure.png",
     "checklist": [
@@ -2080,7 +2080,7 @@ export const projects: Project[] = [
     "updated": "15 Oct 2026",
     "spent": "23.5B",
     "target": "FY 2088/89 (NPC estimate)",
-    "source": "National Planning Commission — National Pride progress, FY 2082/83",
+    "source": "National Planning Commission - National Pride progress, FY 2082/83",
     "sourceUrl": "https://npc.gov.np/content/6836/overall-progress-statement-of-the-project-of/",
     "image": "/images/nepal-infrastructure.png",
     "changeLog": [
@@ -2152,12 +2152,11 @@ export const projects: Project[] = [
     "updated": "FY 2082/83",
     "spent": "3.37B",
     "target": "FY 2089/90 (NPC estimate)",
-    "source": "National Planning Commission — National Pride progress, FY 2082/83",
+    "source": "National Planning Commission - National Pride progress, FY 2082/83",
     "sourceUrl": "https://npc.gov.np/content/6836/overall-progress-statement-of-the-project-of/",
     "image": "https://upload.wikimedia.org/wikipedia/commons/c/ce/Karnali_Highway_view.jpg",
     "gallery": [
       "https://upload.wikimedia.org/wikipedia/commons/c/ce/Karnali_Highway_view.jpg",
-      "https://upload.wikimedia.org/wikipedia/commons/7/75/Maya_Devi_Temple_and_Ashoka_Pillar,_Lumbini,_Rupandehi,_Nepal.jpg"
     ],
     "checklist": [
       {
@@ -2322,7 +2321,7 @@ export const projects: Project[] = [
     "target": "Survey phase; no construction completion date reported",
     "source": "Investment Board Nepal - Dispatch, Feb 2026",
     "sourceUrl": "https://giwmscdntwo.gov.np/media/pdf_upload/IBN%20Dispatch%20February%202026%20%2823%29-Final-%202082-9-27_i6xphmr.pdf",
-    "image": "/images/nepal-infrastructure.png",
+    "image": "https://www.world-energy.org/uploadfile/2023/1211/20231211021644280.jpg",
     "changeLog": [
       {
         "date": "19 Aug 2026",
@@ -2401,7 +2400,7 @@ export const projects: Project[] = [
     "updated": "FY 2082/83",
     "spent": "33.73B",
     "target": "Completion year not set",
-    "source": "National Planning Commission — National Pride progress, FY 2082/83",
+    "source": "National Planning Commission - National Pride progress, FY 2082/83",
     "sourceUrl": "https://npc.gov.np/content/6836/overall-progress-statement-of-the-project-of/",
     "image": "/images/nepal-infrastructure.png",
     "checklist": [
@@ -2466,7 +2465,7 @@ export const projects: Project[] = [
     "target": "FY 2026/27",
     "source": "Department of Roads project director, reported by Khabarhub / Kathmandu Post",
     "sourceUrl": "https://english.khabarhub.com/2026/06/547379/",
-    "image": "/images/nepal-infrastructure.png",
+    "image": "https://www.khabarkura.com/wp-content/uploads/2025/11/nagdhunga-tunnel.jpg",
     "changeLog": [
       {
         "date": "May 2026 (reported); completed-cost update Aug 2026",
@@ -2533,7 +2532,7 @@ export const projects: Project[] = [
     ]
   },
   {
-    "name": "MCC Nepal Compact — Electricity Transmission Project",
+    "name": "MCC Nepal Compact - Electricity Transmission Project",
     "ministry": "Millennium Challenge Account Nepal / Ministry of Finance",
     "location": "National transmission network (cross-border connections)",
     "province": "National",
@@ -2547,7 +2546,7 @@ export const projects: Project[] = [
     "target": "Aug 2028 (compact deadline); up to 12-month no-cost extension sought",
     "source": "National Planning Commission - National Pride progress, FY 2082/83",
     "sourceUrl": "https://npc.gov.np/content/6836/overall-progress-statement-of-the-project-of/",
-    "image": "/images/nepal-infrastructure.png",
+    "image": "https://www.mcanp.org/MCANP/images/MCA-Nepal%20Project%20Areas_Map.jpg",
     "changeLog": [
       {
         "date": "16 Oct 2026",
@@ -3023,6 +3022,10 @@ export const projects: Project[] = [
     "source": "Siddhababa Tunnel Project Office, reported by Kathmandu Post",
     "sourceUrl": "https://kathmandupost.com/province-no-5/2026/09/23/flood-destroys-equipment-pushing-back-siddhababa-tunnel-opening",
     "image": "https://upload.wikimedia.org/wikipedia/commons/e/eb/Siddha_baba_Temple.jpg",
+    "gallery": [
+      "https://upload.wikimedia.org/wikipedia/commons/e/eb/Siddha_baba_Temple.jpg",
+      "https://risingnepaldaily.com/storage/editor/photos/shares/_new/siddhababa_surung_marga__1_.jpeg"
+    ],
     "management": {
       "agency": "Department of Roads - Siddhababa Tunnel Project Office (Dobhan, Palpa)",
       "person": "Navaraj Bastola (project chief)",
@@ -3397,7 +3400,7 @@ export const projects: Project[] = [
     "target": "FY 2085/86 (NPC estimate)",
     "source": "National Planning Commission - National Pride progress, FY 2082/83",
     "sourceUrl": "https://npc.gov.np/content/6836/overall-progress-statement-of-the-project-of/",
-    "image": "/images/nepal-infrastructure.png",
+    "image": "https://annapurnaexpress.prixacdn.net/media/albums/bridge_ptmVig5EeD.jpg",
     "changeLog": [
       {
         "date": "19 Aug 2026",
@@ -3470,7 +3473,7 @@ export const projects: Project[] = [
     "target": "FY 2087/88 (NPC estimate)",
     "source": "Ministry of Energy action plan, reported by Republica / Kathmandu Post",
     "sourceUrl": "https://kathmandupost.com/money/2026/07/27/land-disputes-stall-final-phase-of-rs51-billion-rani-jamara-kulariya-irrigation-project",
-    "image": "/images/nepal-infrastructure.png",
+    "image": "https://assets-cdn.kathmandupost.com/uploads/source/news/2017/others/p3-lead-21072017082054.jpg",
     "changeLog": [
       {
         "date": "27 Jul 2026",
@@ -3782,7 +3785,11 @@ export const projects: Project[] = [
     "target": "06 Jan 2027",
     "source": "Himalayan Kalinchowk-BBR JV / Bharatpur Metro, reported by Republica",
     "sourceUrl": "https://www.myrepublica.nagariknetwork.com/news/gautam-buddha-stadium-construction-faces-fresh-delays-20-41.html",
-    "image": "/images/nepal-infrastructure.png",
+    "image": "https://neplays.com/img/posts/Gautambuddha-Intl-Cricket-Stadium.jpg",
+    "gallery": [
+      "https://neplays.com/img/posts/Gautambuddha-Intl-Cricket-Stadium.jpg",
+      "https://facts.net/wp-content/uploads/2023/09/8-captivating-facts-about-gautam-buddha-international-cricket-stadium-1695235576.jpg"
+    ],
     "management": {
       "agency": "Bharatpur Metropolitan City (joint venture with Bagmati Province and the federal government)",
       "note": "Born from the Dhurmus Suntali initiative and handed to the metro; province and federal grants pay the contractor through the metro."

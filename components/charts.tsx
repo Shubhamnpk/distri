@@ -80,15 +80,19 @@ function useResolved(color: string) {
   const [tick, setTick] = useState('#9ca3af')
   const [ink, setInk] = useState('#111827')
   useEffect(() => {
-    setResolved(resolveColor(color))
-    setGrid(resolveColor('var(--border-light)'))
-    setTick(resolveColor('var(--text-tertiary)'))
-    setInk(resolveColor('var(--text)'))
+    const nextResolved = resolveColor(color)
+    const nextGrid = resolveColor('var(--border-light)')
+    const nextTick = resolveColor('var(--text-tertiary)')
+    const nextInk = resolveColor('var(--text)')
+    setResolved(prev => (prev === nextResolved ? prev : nextResolved))
+    setGrid(prev => (prev === nextGrid ? prev : nextGrid))
+    setTick(prev => (prev === nextTick ? prev : nextTick))
+    setInk(prev => (prev === nextInk ? prev : nextInk))
   }, [color])
   return { resolved, grid, tick, ink }
 }
 
-/** Vertical marker for the current year — history left of it, forecast right. */
+/** Vertical marker for the current year - history left of it, forecast right. */
 function NowLine({ refX, refLabel, ink }: { refX: string; refLabel?: string; ink: string }) {
   return (
     <ReferenceLine

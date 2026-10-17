@@ -48,7 +48,7 @@ const SITES: [string, number, number, string, ProjectSite['confidence']][] = [
   ['Girija Prasad Koirala Cricket Stadium', 26.49605, 87.30284, 'Proposed ground (Baijnathpur)', 'medium'],
   ['Tribhuvan University Cricket Ground', 27.67806, 85.29056, 'Ground centre', 'high'],
   ['West Seti Reservoir Hydropower (800 MW)', 29.35889, 80.77111, 'Dam vicinity, Seti R. (same scheme area as 750 MW)', 'medium'],
-  ['MCC Nepal Compact — Electricity Transmission Project', 27.9828, 84.2656, 'Substation town (New Damauli)', 'medium'],
+  ['MCC Nepal Compact - Electricity Transmission Project', 27.9828, 84.2656, 'Substation town (New Damauli)', 'medium'],
   ['Kathmandu Valley Wholesale Water Supply Transmission (Phase 2)', 27.8334, 85.5771, 'Phase-2 intake area (Melamchi gorge)', 'medium'],
 ]
 

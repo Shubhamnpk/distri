@@ -143,11 +143,11 @@ export type FiscalMilestone = {
 }
 
 const QUARTERS: { month: number; label: string; detail: string }[] = [
-  { month: 5, label: 'Q1 ends', detail: 'First quarter closes (Shrawan–Ashwin)' },
-  { month: 8, label: 'Q2 ends', detail: 'Half-year mark (Kartik–Poush)' },
-  { month: 11, label: 'Q3 ends', detail: 'Nine months in (Magh–Chaitra)' },
-  { month: 2, label: 'Q4 ends · fiscal year closes', detail: 'Full year wraps (Baisakh–Ashadh)' },
-  { month: 3, label: 'New fiscal year begins', detail: 'Shrawan 1 — budgets take effect' },
+  { month: 5, label: 'Q1 ends', detail: 'First quarter closes (Shrawan-Ashwin)' },
+  { month: 8, label: 'Q2 ends', detail: 'Half-year mark (Kartik-Poush)' },
+  { month: 11, label: 'Q3 ends', detail: 'Nine months in (Magh-Chaitra)' },
+  { month: 2, label: 'Q4 ends · fiscal year closes', detail: 'Full year wraps (Baisakh-Ashadh)' },
+  { month: 3, label: 'New fiscal year begins', detail: 'Shrawan 1 - budgets take effect' },
 ]
 
 /** Next fiscal milestones from today (quarter ends + year bounds), soonest first. */

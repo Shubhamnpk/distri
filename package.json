@@ -1,11 +1,13 @@
 {
-  "name": "my-project",
-  "version": "0.1.0",
-  "private": true,
+  "name": "drishti",
+  "version": "1.0.0",
+  "description": "Open public data and civic intelligence platform for Nepal",
+  "license": "MIT",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

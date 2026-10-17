@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, ExternalLink, FileText, Check, Clock, AlertTrian
 import { projects, slugify, findProjectBySlug, parseBudgetCr, utilizationPct, PROJECT_FX_NOTE, PROJECT_FX_SOURCE } from '@/lib/data'
 import { StatusBadge } from '@/components/shared'
 import { RelatedDatasets } from '@/components/related-datasets'
+import { ProjectGallery } from '@/components/project-gallery'
 import type { ProjectUpdate } from '@/lib/types'
 import { formatNpr, formatNprText } from '@/lib/currency'
 
@@ -260,14 +261,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             <section className="panel">
               <p className="eyebrow" style={{ margin: 0 }}>GALLERY</p>
               <h2 className="font-serif" style={{ fontWeight: 500, fontSize: '1.1rem', margin: '.2rem 0 0' }}>Project gallery</h2>
-              <p className="muted" style={{ marginTop: '.25rem' }}>Public project images · click to open</p>
-              <div style={{ display: 'flex', gap: '.5rem', marginTop: '.75rem', overflowX: 'auto', paddingBottom: 4 }}>
-                {projectImages.map(src => (
-                  <a key={src} href={src} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>
-                    <img src={src} alt={project.name} className="rounded-[8px] border border-line-light" style={{ width: 160, height: 110, objectFit: 'cover', display: 'block' }} loading="lazy" />
-                  </a>
-                ))}
-              </div>
+              <p className="muted" style={{ marginTop: '.25rem' }}>Browse {projectImages.length} public project {projectImages.length === 1 ? 'photo' : 'photos'}.</p>
+              <ProjectGallery images={projectImages} projectName={project.name} />
             </section>
           )}
 
