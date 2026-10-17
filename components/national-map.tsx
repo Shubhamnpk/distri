@@ -6,7 +6,7 @@ import {
   Waves, CalendarDays, MapPin, ArrowLeft, Zap, Building2, Activity, History,
   AlertTriangle, CloudRain, SunMedium, Navigation, Landmark, TreePine,
   Plus, Minus, RotateCcw, SlidersHorizontal, ChevronDown, X, Sun, Moon,
-  Maximize, Minimize, Search,
+  Maximize, Minimize, Search, Layers as LayersIcon, Check,
 } from 'lucide-react'
 import { MapContainer, TileLayer, GeoJSON, CircleMarker, Marker, Popup, Tooltip, Pane, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -264,8 +264,6 @@ const NEPAL_BBOX: [[number, number], [number, number]] = [[26.2, 80.2], [30.4, 8
 
 type BasemapKey = 'topo' | 'satellite' | 'streets' | 'dark'
 
-const BASEMAP_CYCLE: BasemapKey[] = ['topo', 'satellite', 'streets', 'dark']
-
 const BASEMAPS: Record<BasemapKey, { name: string; url: string; attribution: string; bg: string }> = {
   topo: {
     name: 'Topo',
@@ -293,20 +291,95 @@ const BASEMAPS: Record<BasemapKey, { name: string; url: string; attribution: str
   },
 }
 
-type Layers = { projects: boolean; hydro: boolean; quakes: boolean; quakesPast: boolean; weather: boolean; incidents: boolean; munis: boolean; parks: boolean; roads: boolean; rain: boolean; rivers: boolean }
+const BASEMAP_KEYS: BasemapKey[] = ['topo', 'satellite', 'streets', 'dark']
+
+function BasemapPreview({ kind, className = '' }: { kind: BasemapKey; className?: string }) {
+  const strokes: Record<BasemapKey, ReactElement> = {
+    topo: <><path d="M0 20Q16 14 32 18T64 16M0 30Q20 24 40 28T64 26M8 40Q24 34 40 38" stroke="#4a7c40" strokeWidth="1.5" fill="none"/><path d="M12 8q8-6 16 0t16 0" stroke="#78986c" fill="none"/></>,
+    satellite: <><path d="M0 11Q13 5 23 13T48 10T64 14M0 34Q14 28 25 36T50 32T64 37" stroke="#91a77a" strokeWidth="3" fill="none" opacity=".65"/><path d="M9 0v46M37 0v46" stroke="#6c7160" strokeWidth="1" opacity=".7"/></>,
+    streets: <><path d="M0 23h64M32 0v46M0 10h64M0 36h64" stroke="#fff" strokeWidth="3"/><path d="M0 23h64M32 0v46" stroke="#d5cbb8" strokeWidth=".8"/></>,
+    dark: <><path d="M0 23h64M32 0v46M0 10h64M0 36h64" stroke="#345346" strokeWidth="1.5"/><circle cx="22" cy="16" r="2" fill="#34c99a"/><circle cx="44" cy="30" r="1.5" fill="#34c99a"/></>,
+  }
+  return <div className={`atlas-basemap-preview ${className}`} style={{ background: BASEMAPS[kind].bg }}><svg viewBox="0 0 64 46" preserveAspectRatio="none" aria-hidden="true">{strokes[kind]}</svg></div>
+}
+
+const COUNTRY_CAPITAL = { name: 'Kathmandu', lat: 27.7172, lng: 85.324 }
+const PROVINCE_CAPITALS: Record<string, { name: string; lat: number; lng: number }> = {
+  Koshi: { name: 'Biratnagar', lat: 26.455, lng: 87.270 },
+  Madhesh: { name: 'Janakpurdham', lat: 26.7288, lng: 85.925 },
+  Bagmati: { name: 'Hetauda', lat: 27.4284, lng: 85.0322 },
+  Gandaki: { name: 'Pokhara', lat: 28.2096, lng: 83.9855 },
+  Lumbini: { name: 'Deukhuri · Bhalubang', lat: 27.84112, lng: 82.76103 },
+  Karnali: { name: 'Birendranagar', lat: 28.59669, lng: 81.61658 },
+  Sudurpashchim: { name: 'Godawari', lat: 28.91, lng: 80.59 },
+}
+
+// A few district HQ names are older spellings or town names while the local
+// boundary files use the current municipality name.
+const HQ_LOCALITY_ALIASES: Record<string, string> = {
+  ilam: 'illam', taplejung: 'phungling', diktel: 'rupakotmajhuwagadhi', dudhkunda: 'solududhakunda',
+  pokhara: 'pokharalekhnath', jomsom: 'gharapjhong', kusma: 'kushma',
+  dhunche: 'gosaikunda', jaleshwar: 'jaleswor', malangwa: 'malangawa',
+  birganj: 'birgunj', salyan: 'sharada', dunai: 'thulibheri', simikot: 'simkot',
+  manma: 'khandachakra', gamghadi: 'chhayanathrara', khalanga: 'bheri',
+  tribhuwannagar: 'ghorahi', liwang: 'rolpa', nepalganj: 'nepalgunj',
+  'dipayalsilgadhi': 'dipayalsilgadi', jayaprithvi: 'jayaprithivi',
+  dasharathchand: 'dasharathchanda', darchula: 'mahakali', bhimeshwar: 'bhimeshwor',
+  nilkantha: 'nilakantha', chautara: 'chautarasangachokgadhi', besisahar: 'besishahar',
+  kapilvastu: 'kapilbastu', parasi: 'ramgram', rukumkot: 'sisne', martadi: 'badimalika',
+}
+
+function headquartersIcon(level: 'country' | 'province' | 'district') {
+  return L.divIcon({
+    html: `<span class="atlas-hq-marker atlas-hq-${level}"><span></span></span>`,
+    className: 'atlas-hq-icon',
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+  })
+}
+
+type Layers = { projects: boolean; hydro: boolean; quakes: boolean; quakesPast: boolean; weather: boolean; incidents: boolean; parks: boolean; roads: boolean; rain: boolean; rivers: boolean }
+
+function pointInRing(lng: number, lat: number, ring: number[][]): boolean {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]
+    const [xj, yj] = ring[j]
+    if ((yi > lat) !== (yj > lat) && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+
+function pointInGeometry(lng: number, lat: number, geometry: any): boolean {
+  if (!geometry) return false
+  if (geometry.type === 'Polygon') {
+    const [outer, ...holes] = geometry.coordinates as number[][][]
+    return !!outer && pointInRing(lng, lat, outer) && !holes.some(ring => pointInRing(lng, lat, ring))
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return (geometry.coordinates as number[][][][]).some(polygon => pointInGeometry(lng, lat, { type: 'Polygon', coordinates: polygon }))
+  }
+  return false
+}
 
 function MapInstanceBridge({
   onMapReady,
   onMove,
+  onZoom,
+  autoZoomPending,
 }: {
   onMapReady: (map: L.Map) => void
   onMove: (lat: number, lng: number, zoom: number) => void
+  onZoom: (lat: number, lng: number, zoom: number) => void
+  autoZoomPending: { current: boolean }
 }) {
   const map = useMap()
   const onMapReadyRef = useRef(onMapReady)
   const onMoveRef = useRef(onMove)
+  const onZoomRef = useRef(onZoom)
   onMapReadyRef.current = onMapReady
   onMoveRef.current = onMove
+  onZoomRef.current = onZoom
 
   useEffect(() => {
     onMapReadyRef.current(map)
@@ -314,6 +387,25 @@ function MapInstanceBridge({
       const c = map.getCenter()
       onMoveRef.current(c.lat, c.lng, map.getZoom())
     }
+    const handleZoom = () => {
+      if (!autoZoomPending.current) return
+      autoZoomPending.current = false
+      const c = map.getCenter()
+      onZoomRef.current(c.lat, c.lng, map.getZoom())
+    }
+    const container = map.getContainer()
+    let zoomIntentTimer = 0
+    const armZoomIntent = () => {
+      autoZoomPending.current = true
+      window.clearTimeout(zoomIntentTimer)
+      zoomIntentTimer = window.setTimeout(() => { autoZoomPending.current = false }, 1500)
+    }
+    const handleTouchStart = (event: TouchEvent) => { if (event.touches.length > 1) armZoomIntent() }
+    const handleKeyDown = (event: KeyboardEvent) => { if (['+', '=', '-', '_'].includes(event.key)) armZoomIntent() }
+    container.addEventListener('wheel', armZoomIntent, { passive: true })
+    container.addEventListener('dblclick', armZoomIntent)
+    container.addEventListener('touchstart', handleTouchStart, { passive: true })
+    container.addEventListener('keydown', handleKeyDown)
     const handleMoveStart = () => {
       map.getContainer().classList.add('map-is-moving')
       const closeLayerTooltips = (layer: L.Layer) => {
@@ -325,22 +417,32 @@ function MapInstanceBridge({
     const handleMoveEnd = () => {
       map.getContainer().classList.remove('map-is-moving')
     }
-    map.on('move', handleMove)
+    // Report settled map state only. Updating React state on every animation
+    // frame re-renders all React-Leaflet layers and interrupts marker zooming.
+    map.on('moveend', handleMove)
     map.on('zoomend', handleMove)
+    map.on('zoomend', handleZoom)
     map.on('movestart', handleMoveStart)
     map.on('moveend', handleMoveEnd)
     handleMove()
     return () => {
-      map.off('move', handleMove)
+      map.off('moveend', handleMove)
       map.off('zoomend', handleMove)
+      map.off('zoomend', handleZoom)
       map.off('movestart', handleMoveStart)
       map.off('moveend', handleMoveEnd)
+      container.removeEventListener('wheel', armZoomIntent)
+      container.removeEventListener('dblclick', armZoomIntent)
+      container.removeEventListener('touchstart', handleTouchStart)
+      container.removeEventListener('keydown', handleKeyDown)
+      window.clearTimeout(zoomIntentTimer)
+      autoZoomPending.current = false
     }
-  }, [map])
+  }, [map, autoZoomPending])
   return null
 }
 
-function FitHelper({ bbox }: { bbox: [[number, number], [number, number]] | null }) {
+function FitHelper({ bbox, skipNextFit }: { bbox: [[number, number], [number, number]] | null; skipNextFit: { current: boolean } }) {
   const map = useMap()
   const first = useRef(true)
   const lastKey = useRef<string | null>(null)
@@ -349,6 +451,7 @@ function FitHelper({ bbox }: { bbox: [[number, number], [number, number]] | null
     const key = `${bbox[0][0]},${bbox[0][1]},${bbox[1][0]},${bbox[1][1]}`
     if (lastKey.current === key) return
     lastKey.current = key
+    if (skipNextFit.current) { skipNextFit.current = false; return }
     map.flyToBounds(bbox, { padding: [60, 60], duration: first.current ? 0.1 : 1.2 })
     first.current = false
   }, [map, bbox])
@@ -494,7 +597,7 @@ export function NationalMap() {
   const [parks, setParks] = useState<LocalMunicipality[]>([])
   const [allParks, setAllParks] = useState<LocalMunicipality[]>([])
   const [munisLoading, setMunisLoading] = useState(false)
-  const [layers, setLayers] = useState<Layers>({ projects: true, hydro: true, quakes: false, quakesPast: false, weather: false, incidents: false, munis: false, parks: true, roads: false, rain: false, rivers: false })
+  const [layers, setLayers] = useState<Layers>({ projects: true, hydro: true, quakes: false, quakesPast: false, weather: false, incidents: false, parks: true, roads: false, rain: false, rivers: false })
   const [parkSel, setParkSel] = useState<LocalMunicipality | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
@@ -505,6 +608,9 @@ export function NationalMap() {
   const [zoomLevel, setZoomLevel] = useState(7)
   const [centerCoord, setCenterCoord] = useState<{ lat: number; lng: number }>({ lat: 28.4, lng: 84.2 })
   const [basemap, setBasemap] = useState<BasemapKey>('topo')
+  const skipNextRegionFit = useRef(false)
+  const autoZoomPending = useRef(false)
+  const [isBasemapMenuOpen, setIsBasemapMenuOpen] = useState(false)
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
   const [isLegendOpen, setIsLegendOpen] = useState(false)
   const [isRegionMenuOpen, setIsRegionMenuOpen] = useState(false)
@@ -726,6 +832,25 @@ export function NationalMap() {
 
   const localByName = useMemo(() => new Map(localDistricts.map(d => [normName(d.name), d] as const)), [localDistricts])
 
+  const districtHeadquarters = useMemo(() => provinceDistricts.flatMap(d => {
+    const hq = localByName.get(normName(d.name))?.hq
+    if (!hq) return []
+    const hqKey = normName(hq)
+    const localityKey = HQ_LOCALITY_ALIASES[hqKey] ?? hqKey
+    const candidates = munis.filter(m => normName(m.name) === localityKey)
+    const districtKey = canonDistrictKey(d.name)
+    const locality = candidates.find(m => canonDistrictKey(m.district) === districtKey) ?? (candidates.length === 1 ? candidates[0] : undefined)
+    if (!locality) return []
+    try {
+      const bounds = L.geoJSON(locality.feature as never).getBounds()
+      if (!bounds.isValid()) return []
+      const center = bounds.getCenter()
+      return [{ district: d.name, hq, lat: center.lat, lng: center.lng }]
+    } catch {
+      return []
+    }
+  }), [provinceDistricts, localByName, munis])
+
   const districtFeatures = useMemo(() => {
     const feats: Record<string, unknown>[] = []
     for (const d of provinceDistricts) {
@@ -866,6 +991,44 @@ export function NationalMap() {
     setZoomLevel(prev => (prev === z ? prev : z))
   }, [])
 
+  const handleMapZoom = useCallback((lat: number, lng: number, z: number) => {
+    const geo = provinceGeo as { features?: { properties?: { id?: number }; geometry?: unknown }[] } | null
+    const provinceFeature = geo?.features?.find(feature => {
+      const id = feature.properties?.id
+      return typeof id === 'number' && pointInGeometry(lng, lat, feature.geometry)
+    })
+    const provinceName = provinceFeature?.properties?.id != null
+      ? PROVINCE_ID_TO_NAME[provinceFeature.properties.id]
+      : undefined
+
+    if (z < 7.2) {
+      if (province || district) {
+        skipNextRegionFit.current = true
+        setProvince(null)
+        setDistrict(null)
+      }
+      return
+    }
+    if (!provinceName || z < 8) return
+
+    let districtName: string | null = null
+    if (z >= 10) {
+      districtName = districts.find(d => {
+        if (d.province !== provinceName) return false
+        const key = normName(d.name)
+        const geometry = polyByName[key] ?? (NAME_ALIAS[key] ? polyByName[NAME_ALIAS[key]] : undefined)
+        return pointInGeometry(lng, lat, (geometry as { geometry?: unknown } | undefined)?.geometry)
+      })?.name ?? null
+    }
+
+    if (province !== provinceName || district !== districtName) {
+      skipNextRegionFit.current = true
+      setProvince(provinceName)
+      setDistrict(districtName)
+      setMuniSel(null)
+    }
+  }, [provinceGeo, province, district, districts, polyByName])
+
   const handleEmptyClick = useCallback(() => {
     if (district) setDistrict(null)
     else if (province) selectProvince(null)
@@ -961,8 +1124,10 @@ export function NationalMap() {
           <MapInstanceBridge
             onMapReady={setMapInstance}
             onMove={handleMapMove}
+            onZoom={handleMapZoom}
+            autoZoomPending={autoZoomPending}
           />
-          <FitHelper bbox={fit ?? NEPAL_BBOX} />
+          <FitHelper bbox={fit ?? NEPAL_BBOX} skipNextFit={skipNextRegionFit} />
           <MuniFocus muni={muniSel} />
           <MapDeselect onEmptyClick={handleEmptyClick} />
           {/* Stacking is by pane, not load order: polygons stay low so the
@@ -973,6 +1138,20 @@ export function NationalMap() {
               mounts later, so load order alone can't guarantee this). */}
           <Pane name="borders" style={{ zIndex: 430 }} />
           <Pane name="points" style={{ zIndex: 620 }} />
+          <Pane name="gps" style={{ zIndex: 700 }} />
+          {gpsPosition && (
+            <Marker
+              pane="gps"
+              position={[gpsPosition.lat, gpsPosition.lng]}
+              icon={L.divIcon({
+                html: '<span class="atlas-gps-marker"><span class="atlas-gps-ring"></span><span class="atlas-gps-dot"></span></span>',
+                className: 'gps-location-icon',
+                iconSize: [28, 28],
+                iconAnchor: [14, 14],
+              })}
+              interactive={false}
+            />
+          )}
           {layers.roads && roads && (
             <GeoJSON
               key="roads"
@@ -1010,7 +1189,7 @@ export function NationalMap() {
               onEachFeature={makeDistrictEach(setDistrict) as any}
             />
           )}
-          {layers.munis && district && muniFeatures.features.length > 0 && (
+          {district && muniFeatures.features.length > 0 && (
             <GeoJSON
               key={`munis-${province}`}
               pane="shapes"
@@ -1042,28 +1221,29 @@ export function NationalMap() {
               }}
             />
           )}
-          {province && provinceDistricts.map(d => {
-            const hq = localByName.get(normName(d.name))?.hq
-            return (
-              <CircleMarker
-                key={`dc-${d.id}`}
-                pane="points"
-                center={[d.lat, d.lon] as [number, number]}
-                radius={district === d.name ? 9 : 6}
-                pathOptions={{
-                  color: district === d.name ? '#0b4f3e' : '#475569',
-                  weight: 2,
-                  fillColor: district === d.name ? '#0b4f3e' : '#ffffff',
-                  fillOpacity: district === d.name ? 0.9 : 0.85,
-                }}
-                eventHandlers={{ click: () => setDistrict(cur => (cur === d.name ? null : d.name)) }}
-              >
-                <Tooltip direction="top" offset={[0, -8]}>
-                  {hq ? `${d.name} · HQ ${hq}` : d.name}
-                </Tooltip>
-              </CircleMarker>
-            )
-          })}
+          {(!province || province === 'Bagmati') && (
+            <Marker position={[COUNTRY_CAPITAL.lat, COUNTRY_CAPITAL.lng]} icon={headquartersIcon('country')} pane="points">
+              <Tooltip direction="top" offset={[0, -9]}>{`National capital · ${COUNTRY_CAPITAL.name}`}</Tooltip>
+            </Marker>
+          )}
+          {Object.entries(PROVINCE_CAPITALS)
+            .filter(([capitalProvince]) => !province || capitalProvince === province)
+            .map(([capitalProvince, capital]) => (
+              <Marker key={`province-hq-${capitalProvince}`} position={[capital.lat, capital.lng]} icon={headquartersIcon('province')} pane="points">
+                <Tooltip direction="top" offset={[0, -9]}>{`${capitalProvince} provincial capital · ${capital.name}`}</Tooltip>
+              </Marker>
+            ))}
+          {districtHeadquarters.map(hq => (
+            <Marker
+              key={`district-hq-${hq.district}`}
+              position={[hq.lat, hq.lng]}
+              icon={headquartersIcon('district')}
+              pane="points"
+              eventHandlers={{ click: () => setDistrict(cur => cur === hq.district ? null : hq.district) }}
+            >
+              <Tooltip direction="top" offset={[0, -9]}>{`${hq.district} district HQ · ${hq.hq} (locality marker)`}</Tooltip>
+            </Marker>
+          ))}
           {layers.projects && visibleProjects.map(({ p, district: dd, provinceLevel, exact, siteLabel, confident, lat, lon }) => (
             <CircleMarker
               key={`p-${p.name}`}
@@ -1199,47 +1379,6 @@ export function NationalMap() {
             )
           })}
         </MapContainer>
-        {/* GPS dot (outside Leaflet pane so it tracks but animates natively) */}
-        {gpsPosition && mapInstance && (() => {
-          const pt = mapInstance.latLngToContainerPoint([gpsPosition.lat, gpsPosition.lng])
-          return (
-            <div
-              style={{
-                position: 'absolute',
-                left: pt.x,
-                top: pt.y,
-                transform: 'translate(-50%, -50%)',
-                zIndex: 700,
-                pointerEvents: 'none',
-              }}
-            >
-              {/* Accuracy ring */}
-              <div
-                className="atlas-gps-ring"
-                style={{
-                  position: 'absolute',
-                  left: '50%',
-                  top: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  width: 28,
-                  height: 28,
-                  background: 'rgba(37,99,235,.25)',
-                  border: '1.5px solid rgba(37,99,235,.45)',
-                }}
-              />
-              {/* Blue dot */}
-              <div style={{
-                position: 'relative',
-                width: 14,
-                height: 14,
-                borderRadius: '50%',
-                background: '#2563eb',
-                border: '2.5px solid #fff',
-                boxShadow: '0 2px 8px rgba(37,99,235,.5)',
-              }} />
-            </div>
-          )
-        })()}
       </div>
 
       {/* Top Floating Control Bar */}
@@ -1398,18 +1537,8 @@ export function NationalMap() {
         </div>
 
         {/* Center: Search Bar */}
-        <div style={{ flex: '1 1 0', maxWidth: 360, minWidth: 170, position: 'relative' }}>
-          <div
-            style={{
-              display: 'flex', alignItems: 'center', gap: 7,
-              background: 'var(--bg-card, rgba(255,255,255,0.92))',
-              backdropFilter: 'blur(12px)',
-              border: searchFocused ? '1.5px solid var(--accent)' : '1px solid var(--border-light)',
-              borderRadius: 10, padding: '5px 11px', height: 34,
-              boxShadow: searchFocused ? '0 0 0 3px rgba(52,201,154,.18)' : '0 1px 4px rgba(0,0,0,.08)',
-              transition: 'border-color .15s, box-shadow .15s',
-            }}
-          >
+        <div className="atlas-search-wrap">
+          <div className={`atlas-search-box${searchFocused ? ' is-focused' : ''}`}>
             <Search size={14} className={searchFocused ? 'text-accent' : 'text-tertiary'} style={{ flexShrink: 0 }} />
             <input
               ref={searchRef}
@@ -1439,7 +1568,7 @@ export function NationalMap() {
                   searchRef.current?.blur()
                 }
               }}
-              style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: '.72rem', fontWeight: 500, color: 'var(--text)', minWidth: 0 }}
+              className="atlas-search-input"
             />
             {searchQuery && (
               <button onClick={() => { setSearchQuery(''); searchRef.current?.focus() }} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 0, lineHeight: 1, fontSize: '.8rem', flexShrink: 0 }} aria-label="Clear search">✕</button>
@@ -1471,14 +1600,14 @@ export function NationalMap() {
 
             if (totalMatches === 0) {
               return (
-                <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, background: 'var(--bg-card, rgba(255,255,255,0.97))', backdropFilter: 'blur(14px)', border: '1px solid var(--border-light)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,.15)', zIndex: 920, overflow: 'hidden', padding: '.85rem 1rem', textAlign: 'center' }}>
+                <div className="atlas-search-results atlas-search-empty">
                   <span style={{ fontSize: '.72rem', color: 'var(--text-tertiary)' }}>No projects, districts or parks found for &ldquo;{searchQuery}&rdquo;</span>
                 </div>
               )
             }
 
             return (
-              <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, background: 'var(--bg-card, rgba(255,255,255,0.97))', backdropFilter: 'blur(14px)', border: '1px solid var(--border-light)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,.15)', zIndex: 920, overflow: 'hidden', maxHeight: 360, overflowY: 'auto' }}>
+              <div className="atlas-search-results">
                 {projMatches.length > 0 && <div style={{ padding: '.45rem .7rem .2rem', fontSize: '.56rem', fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase' }} className="text-tertiary">Projects</div>}
                 {projMatches.map(pt => (
                   <button
@@ -1566,7 +1695,6 @@ export function NationalMap() {
             { key: 'rivers', label: 'Rivers', color: '#dc2626', count: counts.rivers },
             { key: 'weather', label: 'Weather', color: '#2563eb', count: counts.weather },
             { key: 'roads', label: 'Highways', color: '#b45309', count: counts.roads },
-            { key: 'munis', label: 'Palikas', color: '#94a3b8', count: district ? activeMunis.length : 0 },
             { key: 'parks', label: 'Protected', color: '#0f766e', count: displayParks.length },
           ] as { key: keyof Layers; label: string; color: string; count: number }[]).map(({ key, label, color, count }) => {
             const active = layers[key]
@@ -2083,6 +2211,15 @@ export function NationalMap() {
                   {label}
                 </button>
               ))}
+              {[
+                { level: 'country', label: 'National capital' },
+                { level: 'province', label: 'Province capital' },
+                { level: 'district', label: 'District HQ locality' },
+              ].map(({ level, label }) => (
+                <span key={level} className="atlas-hq-legend-item">
+                  <span className={`atlas-hq-legend-dot atlas-hq-${level}`} />{label}
+                </span>
+              ))}
             </div>
           )}
           {/* Scale bar — always visible at bottom of legend */}
@@ -2121,37 +2258,27 @@ export function NationalMap() {
 
         {/* Basemap toggle + Zoom row */}
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
-          {/* Single Google Maps–style basemap button: thumbnail = NEXT map, click to cycle */}
-          {(() => {
-            const idx = BASEMAP_CYCLE.indexOf(basemap)
-            const nextKey = BASEMAP_CYCLE[(idx + 1) % BASEMAP_CYCLE.length]
-            const next = BASEMAPS[nextKey]
-            const thumbSvg: Record<BasemapKey, ReactElement> = {
-              topo: <><path d="M0 20 Q16 14 32 18 Q48 22 64 16" stroke="#4a7c40" strokeWidth="1.5" fill="none"/><path d="M0 30 Q20 24 40 28 Q52 30 64 26" stroke="#6a9c60" strokeWidth="1" fill="none"/><path d="M8 40 Q24 34 40 38" stroke="#8aac80" strokeWidth="1" fill="none"/></>,
-              satellite: <><rect x="10" y="8" width="18" height="12" rx="1" fill="#2a5a2a" opacity="0.6"/><rect x="36" y="14" width="22" height="16" rx="1" fill="#1a4a3a" opacity="0.5"/><rect x="6" y="28" width="14" height="10" rx="1" fill="#3a5a1a" opacity="0.4"/></>,
-              streets: <><line x1="0" y1="23" x2="64" y2="23" stroke="#ccc" strokeWidth="2.5"/><line x1="32" y1="0" x2="32" y2="46" stroke="#ccc" strokeWidth="1.5"/><line x1="0" y1="10" x2="64" y2="10" stroke="#ddd" strokeWidth="1"/><line x1="0" y1="36" x2="64" y2="36" stroke="#ddd" strokeWidth="1"/></>,
-              dark: <><line x1="0" y1="23" x2="64" y2="23" stroke="#2a4a3a" strokeWidth="2"/><line x1="32" y1="0" x2="32" y2="46" stroke="#1a3a2a" strokeWidth="1.5"/><circle cx="22" cy="16" r="2" fill="#34c99a" opacity="0.7"/><circle cx="44" cy="30" r="1.5" fill="#34c99a" opacity="0.5"/></>,
-            }
-            return (
-              <button onClick={() => setBasemap(nextKey)} title={`Switch to ${next.name} basemap`} aria-label={`Switch to ${next.name}`} className="atlas-basemap-toggle">
-                <div className="atlas-basemap-toggle-thumb" style={{ background: next.bg }}>
-                  <svg width="100%" height="100%" viewBox="0 0 64 46" preserveAspectRatio="none" style={{ opacity: 0.5 }}>
-                    {thumbSvg[nextKey]}
-                  </svg>
-                </div>
-                <div className="atlas-basemap-toggle-label">
-                  <span style={{ fontSize: '.44rem', opacity: .7, display: 'block', lineHeight: 1.1 }}>Switch to</span>
-                  <span style={{ fontSize: '.58rem', fontWeight: 800 }}>{next.name}</span>
-                </div>
-              </button>
-            )
-          })()}
+          <div className="atlas-basemap-picker">
+            <button className="atlas-basemap-trigger" type="button" onClick={() => setIsBasemapMenuOpen(open => !open)} aria-expanded={isBasemapMenuOpen} aria-haspopup="dialog" aria-label={`Basemap: ${BASEMAPS[basemap].name}`}>
+              <BasemapPreview kind={basemap} className="atlas-basemap-trigger-preview" />
+              <span className="atlas-basemap-trigger-copy"><span>Map style</span><strong>{BASEMAPS[basemap].name}</strong></span>
+              <LayersIcon size={15} aria-hidden="true" />
+            </button>
+            {isBasemapMenuOpen && <div className="atlas-basemap-menu" role="dialog" aria-label="Choose map style">
+              <div className="atlas-basemap-menu-heading"><span>Map style</span><button type="button" onClick={() => setIsBasemapMenuOpen(false)} aria-label="Close map style menu"><X size={15} /></button></div>
+              <div className="atlas-basemap-options">{BASEMAP_KEYS.map(key => <button key={key} type="button" className={`atlas-basemap-option${basemap === key ? ' is-selected' : ''}`} aria-pressed={basemap === key} onClick={() => { setBasemap(key); setIsBasemapMenuOpen(false) }}>
+                <BasemapPreview kind={key} />
+                <span>{BASEMAPS[key].name}</span>
+                {basemap === key && <Check size={14} aria-hidden="true" />}
+              </button>)}</div>
+            </div>}
+          </div>
 
           {/* Zoom stack + GPS button */}
           <div className="atlas-zoom-pill">
-            <button onClick={() => mapInstance?.zoomIn()} className="atlas-zoom-btn" title="Zoom In (+)" aria-label="Zoom in"><Plus size={16} /></button>
+            <button onClick={() => { autoZoomPending.current = true; window.setTimeout(() => { autoZoomPending.current = false }, 1500); mapInstance?.zoomIn() }} className="atlas-zoom-btn" title="Zoom In (+)" aria-label="Zoom in"><Plus size={16} /></button>
             <div className="atlas-zoom-badge">Z{zoomLevel}</div>
-            <button onClick={() => mapInstance?.zoomOut()} className="atlas-zoom-btn" title="Zoom Out (−)" aria-label="Zoom out"><Minus size={16} /></button>
+            <button onClick={() => { autoZoomPending.current = true; window.setTimeout(() => { autoZoomPending.current = false }, 1500); mapInstance?.zoomOut() }} className="atlas-zoom-btn" title="Zoom Out (−)" aria-label="Zoom out"><Minus size={16} /></button>
             <button onClick={() => { selectProvince(null); mapInstance?.flyToBounds(NEPAL_BBOX, { padding: [40, 40], duration: 0.8 }) }} className="atlas-zoom-btn" title="Reset view" aria-label="Fit Nepal" style={{ borderTop: '1px solid var(--border-light)' }}><RotateCcw size={14} /></button>
             <button
               onClick={locateMe}

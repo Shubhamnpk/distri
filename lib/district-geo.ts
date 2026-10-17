@@ -264,6 +264,10 @@ const CANON_DISTRICT: Record<string, string> = {
   rukume: 'rukumeast',
   rukumw: 'rukumwest',
   sindhupalchowk: 'sindhupalchok',
+  tehrathum: 'terhathum',
+  kapilvastu: 'kapilbastu',
+  parasi: 'nawalparasiwest',
+  easternrukum: 'rukumeast',
 }
 
 export function canonDistrictKey(name: string): string {
