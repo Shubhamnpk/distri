@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { ArrowUpRight, Banknote, Flame, HandCoins, ShieldCheck, Wind } from 'lucide-react'
+import { ArrowUpRight, Banknote, Flame, HandCoins, ShieldCheck, Wind, Waves } from 'lucide-react'
 import { BarChart, LineChart, ProgressRing } from '@/components/charts'
 import { formatNpr, formatNum } from '@/lib/currency'
 import {
@@ -19,12 +19,12 @@ const TH = {
 const TD = { padding: '.5rem .55rem', borderBottom: '1px solid var(--border-light)', verticalAlign: 'top' as const }
 const NUM = { ...TD, textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }
 
-/** How many recent incidents get their own loss record pulled in — one request each. */
+/** How many recent incidents get their own loss record pulled in - one request each. */
 const INCIDENT_WINDOW = 50
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 function fmtDate(iso?: string | null): string {
-  if (!iso) return '—'
+  if (!iso) return '-'
   const [y, m, d] = iso.slice(0, 10).split('-')
   return m && d ? `${Number(d)} ${MONTHS[Number(m) - 1] ?? m} ${y}` : y
 }
@@ -55,7 +55,7 @@ function HazardTag({ hazard }: { hazard?: BipadHazard }) {
   )
 }
 
-const n = (v: number | null | undefined): string => (v == null ? '—' : formatNum(v))
+const n = (v: number | null | undefined): string => (v == null ? '-' : formatNum(v))
 
 export default function DisastersPage() {
   const [profile, setProfile] = useState<BipadIncidentProfile[]>([])
@@ -64,10 +64,12 @@ export default function DisastersPage() {
   const [losses, setLosses] = useState<BipadLoss[]>([])
   const [lossesPending, setLossesPending] = useState(true)
   const [relief, setRelief] = useState<BipadRelief[]>([])
+  const [reliefCount, setReliefCount] = useState(0)
   const [districts, setDistricts] = useState<BipadGeo[]>([])
   const [municipalities, setMunicipalities] = useState<BipadGeo[]>([])
   const [fiscalYears, setFiscalYears] = useState<BipadFiscalYear[]>([])
   const [budget, setBudget] = useState<BipadBudgetActivity[]>([])
+  const [budgetCount, setBudgetCount] = useState(0)
   const [loading, setLoading] = useState(true)
 
   const [hazardFilter, setHazardFilter] = useState('all')
@@ -94,10 +96,12 @@ export default function DisastersPage() {
       setHazards(hz.results)
       setIncidents(inc.results)
       setRelief(rel.results)
+      setReliefCount(rel.count)
       setDistricts(dist.results)
       setMunicipalities(muni.results)
       setFiscalYears(fy.results)
       setBudget(bud.results)
+      setBudgetCount(bud.count)
       setLoading(false)
       const losses = await fetchBipadLossesByIds(inc.results.map(i => Number(i.loss)).filter(Boolean))
       if (cancelled) return
@@ -122,24 +126,27 @@ export default function DisastersPage() {
     return [...m.entries()].sort((a, b) => b[1] - a[1])
   }, [rows])
 
+  const orderedRows = useMemo(() => [...rows].sort((a, b) => (b.incidentOn ?? '').localeCompare(a.incidentOn ?? '')), [rows])
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return rows.filter(r =>
+    return orderedRows.filter(r =>
       (hazardFilter === 'all' || Number(r.hazard) === Number(hazardFilter)) &&
       (!verifiedOnly || r.verified) &&
       (!q || String(r.title ?? '').toLowerCase().includes(q)),
     )
-  }, [rows, hazardFilter, verifiedOnly, query])
+  }, [orderedRows, hazardFilter, verifiedOnly, query])
 
+  const profileOrdered = useMemo(() => [...profile].sort((a, b) => a.year - b.year), [profile])
   const series = useMemo(() => ({
-    incidents: profile.map(p => ({ year: String(p.year), value: p.values.incidentCount })),
-    deaths: profile.map(p => ({ year: String(p.year), value: p.values.peopleDeathCount })),
-    loss: profile.map(p => ({ year: String(p.year), value: p.values.estimatedTotalLoss || null })),
-    houses: profile.map(p => ({ year: String(p.year), value: p.values.totalInfrastructureDestroyedCount || null })),
-  }), [profile])
+    incidents: profileOrdered.map(p => ({ year: String(p.year), value: p.values.incidentCount })),
+    deaths: profileOrdered.map(p => ({ year: String(p.year), value: p.values.peopleDeathCount })),
+    loss: profileOrdered.map(p => ({ year: String(p.year), value: p.values.estimatedTotalLoss || null })),
+    houses: profileOrdered.map(p => ({ year: String(p.year), value: p.values.totalInfrastructureDestroyedCount || null })),
+  }), [profileOrdered])
 
-  const ytd = profile.length ? profile[profile.length - 1] : null
-  const lastFull = useMemo(() => [...profile].reverse().find(p => p.year < new Date().getFullYear()) ?? null, [profile])
+  const ytd = profileOrdered[profileOrdered.length - 1] ?? null
+  const lastFull = useMemo(() => [...profileOrdered].reverse().find(p => p.year < new Date().getFullYear()) ?? null, [profileOrdered])
 
   const reliefRows = useMemo(() => relief.map(r => ({
     ...r,
@@ -193,23 +200,41 @@ export default function DisastersPage() {
 
   return (
     <div className="content-wrap">
+      <section className="disaster-hero">
+        <div className="disaster-hero-copy">
+          <p className="eyebrow">NATIONAL DISASTER MONITOR</p>
+          <h1>Disaster impact, relief and recovery</h1>
+          <p className="muted">Explore Nepal&apos;s official incident records, reported damage, relief distributions and local disaster-risk budgets in one place.</p>
+          <nav className="disaster-hero-links" aria-label="Disaster page sections">
+            <a href="#incidents">Recent incidents <ArrowUpRight size={13} /></a>
+            <a href="#relief">Relief records <ArrowUpRight size={13} /></a>
+            <a href="#recovery">Recovery outlook <ArrowUpRight size={13} /></a>
+          </nav>
+        </div>
+        <aside className="disaster-hero-source">
+          <span className="disaster-live-dot" />
+          <span className="eyebrow">OFFICIAL DATA</span>
+          <strong>BIPAD · NDRRMA</strong>
+          <p>Records are read from the government portal and refreshed hourly. Dates and missing fields follow the source.</p>
+          <a href="https://bipadportal.gov.np" target="_blank" rel="noreferrer">Open BIPAD portal <ArrowUpRight size={13} /></a>
+        </aside>
+      </section>
       {/* ── What NDRRMA recorded ── */}
       <section className="panel">
         <p className="eyebrow">BIPAD · NDRRMA DISASTER LEDGER</p>
         <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.9rem', letterSpacing: '-.03em', margin: 0, fontWeight: 500 }}>
-          What Nepal recorded, and what it spent
+          What Nepal recorded, reported and budgeted
         </h2>
         <p className="muted" style={{ maxWidth: 720 }}>
           NDRRMA&apos;s BIPAD portal is the official record of disaster incidents, losses, relief and DRR budgets.
-          Everything below is read live from it — the yearly totals, the loss figures attached to recent incidents,
-          every published relief distribution, and the municipal DRR budget lines with their spend.
+          Annual totals and incident details come from NDRRMA&apos;s records. Tables show recent incident, relief and budget entries available through BIPAD.
         </p>
         <div className="metric-grid">
           {[
-            { label: `Incidents recorded · ${ytd?.year ?? '—'} to date`, val: ytd ? formatNum(ytd.values.incidentCount) : '-', sub: 'partial year, still accruing' },
-            { label: 'Deaths recorded · 2026 to date', val: ytd ? formatNum(ytd.values.peopleDeathCount) : '-', sub: `${ytd ? formatNum(ytd.values.peopleInjuredCount) : '-'} injured · ${ytd ? formatNum(ytd.values.peopleMissingCount) : '-'} missing` },
-            { label: `Estimated loss · ${lastFull?.year ?? '—'}`, val: lastFull ? formatNpr(lastFull.values.estimatedTotalLoss) : '-', sub: 'as reported in incident loss records' },
-            { label: `Houses destroyed · ${lastFull?.year ?? '—'}`, val: lastFull ? formatNum(lastFull.values.totalInfrastructureDestroyedCount) : '-', sub: 'infrastructure detail in incident records' },
+            { label: `Incidents recorded · ${ytd?.year ?? '-'}`, val: ytd ? formatNum(ytd.values.incidentCount) : '-', sub: ytd?.year === new Date().getFullYear() ? 'year to date, still accruing' : 'latest year available in the source' },
+            { label: `Deaths recorded · ${ytd?.year ?? '-'}`, val: ytd ? formatNum(ytd.values.peopleDeathCount) : '-', sub: `${ytd ? formatNum(ytd.values.peopleInjuredCount) : '-'} injured · ${ytd ? formatNum(ytd.values.peopleMissingCount) : '-'} missing` },
+            { label: `Estimated loss · ${lastFull?.year ?? '-'}`, val: lastFull ? formatNpr(lastFull.values.estimatedTotalLoss) : '-', sub: 'as reported in incident loss records' },
+            { label: `Houses destroyed · ${lastFull?.year ?? '-'}`, val: lastFull ? formatNum(lastFull.values.totalInfrastructureDestroyedCount) : '-', sub: 'infrastructure detail in incident records' },
           ].map(c => (
             <div key={c.label} className="metric-card">
               <p>{c.label}</p>
@@ -221,6 +246,23 @@ export default function DisastersPage() {
       </section>
 
       {/* ── 16 years ── */}
+      <section id="recovery" className="disaster-recovery panel">
+        <div className="disaster-recovery-icon"><Waves size={20} /></div>
+        <div className="disaster-recovery-body">
+          <p className="eyebrow">RECOVERY IN FOCUS · RASUWA–BHOTEKOSHI FLOOD</p>
+          <h2>Rebuilding needs extend well beyond emergency relief</h2>
+          <p className="muted">NDRRMA&apos;s rapid damage and needs assessment, published 11 September 2026, estimated damage and losses above {formatNpr(408_280_000_000)}. It estimated {formatNpr(723_315_200_000)} for recovery and reconstruction, including {formatNpr(8_735_000_000)} for immediate relief and short-term recovery over six months.</p>
+          <p className="disaster-recovery-note">These are assessment estimates for planning. They do not mean the money has been allocated, spent or delivered to affected households.</p>
+          <a href="https://ndrrma.gov.np/en/news/239" target="_blank" rel="noreferrer">Read NDRRMA&apos;s assessment summary <ArrowUpRight size={13} /></a>
+          <a href="https://ndrrma.gov.np/en/situation-report" target="_blank" rel="noreferrer">Browse official response situation reports <ArrowUpRight size={13} /></a>
+        </div>
+        <div className="disaster-recovery-figure">
+          <span>ESTIMATED RECOVERY NEED</span>
+          <strong>{formatNpr(723_315_200_000)}</strong>
+          <small>Rasuwa–Bhotekoshi flood · 2026 assessment</small>
+        </div>
+      </section>
+
       <section className="feature-grid">
         <article className="panel">
           <div className="section-heading">
@@ -233,10 +275,9 @@ export default function DisastersPage() {
           {loading && !profile.length ? <p className="muted">Loading…</p> : series.incidents.length ? (
             <div style={{ marginTop: '.9rem' }}>
               <BarChart data={series.incidents} color="var(--danger)" height={190} yAxis formatValue={formatNum} />
-              <p className="muted" style={{ marginTop: '.6rem' }}>
-                2015 is the Gorkha earthquake year: {series.incidents.find(d => d.year === '2015')?.value.toLocaleString()} recorded incidents and{' '}
-                {series.deaths.find(d => d.year === '2015')?.value.toLocaleString()} deaths. {ytd?.year} is a partial year.
-              </p>
+              {series.incidents.some(d => d.year === '2015') && <p className="muted" style={{ marginTop: '.6rem' }}>
+                The 2015 series includes {series.incidents.find(d => d.year === '2015')?.value.toLocaleString()} recorded incidents and {series.deaths.find(d => d.year === '2015')?.value.toLocaleString()} deaths. The latest year may be incomplete.
+              </p>}
             </div>
           ) : <p className="muted">Series unavailable.</p>}
         </article>
@@ -248,22 +289,22 @@ export default function DisastersPage() {
           </div>
           <div style={{ display: 'grid', gap: '.9rem', marginTop: '.9rem' }}>
             <LineChart data={series.deaths} color="var(--danger)" height={100} title="Deaths per year" formatValue={formatNum} />
-            <LineChart data={series.loss} color="var(--accent)" height={100} title="Estimated loss per year · NPR" formatValue={formatNpr} />
+            <LineChart data={series.loss} color="var(--accent)" height={100} title="Estimated loss per year" formatValue={formatNpr} />
           </div>
           <p className="muted" style={{ marginTop: '.6rem' }}>
-            Loss is the summed damage estimate NDRRMA attached to that year&apos;s incidents — not a budget or a payout.
+            Loss is the summed damage estimate NDRRMA attached to that year&apos;s incidents - not a budget or a payout.
           </p>
         </article>
       </section>
 
       {/* ── Per-incident accountability ── */}
-      <section className="panel">
+      <section id="incidents" className="panel">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">INCIDENT-BY-INCIDENT · {incidents.length} MOST RECENT</p>
+            <p className="eyebrow">INCIDENT-BY-INCIDENT · LATEST {incidents.length} SOURCE RECORDS</p>
             <h2>What was recorded for each incident</h2>
             <p className="muted">
-              Casualties and damage are read from the loss record NDRRMA attached to the incident{lossesPending ? ' — still loading' : ''}.
+              Casualties and damage are read from the loss record NDRRMA attached to the incident{lossesPending ? ' - still loading' : ''}.
               A dash means no figure was recorded for that incident.
             </p>
           </div>
@@ -278,7 +319,7 @@ export default function DisastersPage() {
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search place or title"
+            placeholder="Search incident title"
             style={{ background: 'var(--bg-sunken)', border: 0, borderRadius: 6, padding: '.4rem .6rem', fontSize: '.7rem', minWidth: 190, color: 'var(--text)' }}
           />
           <label className="status-badge" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '.35rem' }}>
@@ -294,7 +335,7 @@ export default function DisastersPage() {
                   <td style={TD}>{fmtDate(r.incidentOn)}</td>
                   <td style={TD}><HazardTag hazard={hazardById.get(Number(r.hazard))} /></td>
                   <td style={TD}>
-                    <strong style={{ display: 'block', fontWeight: 600 }}>{String(r.title ?? '—')}</strong>
+                    <strong style={{ display: 'block', fontWeight: 600 }}>{String(r.title ?? '-')}</strong>
                     <small className="text-tertiary" style={{ fontSize: '.6rem' }}>
                       {r.verified ? 'verified' : 'unverified'}{r.dataSource ? ` · ${r.dataSource}` : ''}
                     </small>
@@ -304,7 +345,7 @@ export default function DisastersPage() {
                   <td style={NUM}>{n(r.lost?.peopleInjuredCount)}</td>
                   <td style={NUM}>{n(r.lost?.familyAffectedCount)}</td>
                   <td style={NUM}>{n(r.lost?.infrastructureDestroyedHouseCount)}</td>
-                  <td style={NUM}>{r.lost?.estimatedLoss ? formatNpr(r.lost.estimatedLoss) : '—'}</td>
+                  <td style={NUM}>{r.lost?.estimatedLoss ? formatNpr(r.lost.estimatedLoss) : '-'}</td>
                 </tr>
               ))}
               {!incidentRows.length && <tr><td colSpan={9} style={TD}><span className="muted">No incidents match this filter.</span></td></tr>}
@@ -319,10 +360,10 @@ export default function DisastersPage() {
       </section>
 
       {/* ── Relief ── */}
-      <section className="panel" style={{ marginTop: '.75rem' }}>
+      <section id="relief" className="panel" style={{ marginTop: '.75rem' }}>
         <div className="panel-head">
           <div>
-            <p className="eyebrow">RELIEF DISTRIBUTED · {relief.length} PUBLISHED RECORDS</p>
+            <p className="eyebrow">RELIEF DISTRIBUTED · {relief.length} OF {reliefCount} SOURCE RECORDS</p>
             <h3>Relief money, recorded</h3>
             <p className="muted">Every relief distribution BIPAD carries: who received it, when, how much, and the gender split recorded.</p>
           </div>
@@ -332,10 +373,10 @@ export default function DisastersPage() {
           <>
             <div className="metric-grid" style={{ paddingBottom: 0 }}>
               {[
-                { label: 'Published relief, total', val: formatNpr(reliefTotal.amount), sub: `${reliefRows.length} distribution records` },
+                { label: 'Relief in loaded records', val: formatNpr(reliefTotal.amount), sub: `${reliefRows.length} of ${reliefCount} BIPAD records` },
                 { label: 'Beneficiary families', val: formatNum(reliefTotal.families), sub: `${formatNum(reliefTotal.male)} male · ${formatNum(reliefTotal.female)} female recorded` },
                 { label: 'Window covered', val: fmtDate(reliefTotal.from), sub: `latest record ${fmtDate(reliefTotal.to)}` },
-                { label: `Loss reported · ${lastFull?.year ?? '—'}`, val: lastFull ? formatNpr(lastFull.values.estimatedTotalLoss) : '-', sub: 'incident loss records, all hazards, nationally' },
+                { label: `Loss reported · ${lastFull?.year ?? '-'}`, val: lastFull ? formatNpr(lastFull.values.estimatedTotalLoss) : '-', sub: 'incident loss records, all hazards, nationally' },
               ].map(c => (
                 <div key={c.label} className="metric-card">
                   <p>{c.label}</p>
@@ -348,20 +389,20 @@ export default function DisastersPage() {
               {reliefRows.map(r => (
                 <tr key={r.id}>
                   <td style={TD}>{fmtDate(r.dateOfReliefDistribution)}</td>
-                  <td style={TD}>{r.fyLabel ?? r.fiscalYear ?? '—'}</td>
-                  <td style={TD}>{r.districtName ?? (r.district ?? '—')}</td>
-                  <td style={TD}>{r.muniName ?? (r.municipality ?? '—')}</td>
-                  <td style={TD}>{r.nameOfBeneficiary?.trim() || '—'}</td>
+                  <td style={TD}>{r.fyLabel ?? r.fiscalYear ?? '-'}</td>
+                  <td style={TD}>{r.districtName ?? (r.district ?? '-')}</td>
+                  <td style={TD}>{r.muniName ?? (r.municipality ?? '-')}</td>
+                  <td style={TD}>{r.nameOfBeneficiary?.trim() || '-'}</td>
                   <td style={NUM}>{n(r.numberOfBeneficiaryFamily)}</td>
-                  <td style={{ ...NUM, fontWeight: 600 }}>{r.reliefAmountNpr ? formatNpr(r.reliefAmountNpr) : '—'}</td>
+                  <td style={{ ...NUM, fontWeight: 600 }}>{r.reliefAmountNpr ? formatNpr(r.reliefAmountNpr) : '-'}</td>
                   <td style={NUM}>{n(r.totalMaleBenefited)} / {n(r.totalFemaleBenefited)}</td>
                 </tr>
               ))}
             </Ledger>
             <p className="muted" style={{ marginTop: '.7rem' }}>
               These {reliefRows.length} records total {formatNpr(reliefTotal.amount)}, while the incident-loss figures NDRRMA published for{' '}
-              {lastFull?.year} alone total {lastFull ? formatNpr(lastFull.values.estimatedTotalLoss) : '—'}. The two are different things — one counts damage
-              NDRRMA recorded, the other counts distributions NDRRMA published to this portal — and relief is entered per distribution event, not per incident.
+              {lastFull?.year} alone total {lastFull ? formatNpr(lastFull.values.estimatedTotalLoss) : '-'}. The two are different things - one counts damage
+              NDRRMA recorded, the other counts distributions NDRRMA published to this portal - and relief is entered per distribution event, not per incident.
             </p>
           </>
         ) : <p className="muted" style={{ marginTop: '.75rem' }}>No relief records published.</p>}
@@ -371,7 +412,7 @@ export default function DisastersPage() {
       <section className="panel" style={{ marginTop: '.75rem' }}>
         <div className="panel-head">
           <div>
-            <p className="eyebrow">DRR BUDGET LINES · {budget.length} ACTIVITIES</p>
+            <p className="eyebrow">DRR BUDGET LINES · {budget.length} OF {budgetCount} ACTIVITIES</p>
             <h3>Disaster-risk-reduction budget vs spend</h3>
             <p className="muted">Municipal DRR activities with the amount budgeted and the expenditure recorded against it.</p>
           </div>
@@ -419,13 +460,13 @@ export default function DisastersPage() {
                 const pct = amount > 0 ? (spent / amount) * 100 : null
                 return (
                   <tr key={b.id}>
-                    <td style={{ ...TD, maxWidth: 380 }}>{b.activityName?.trim() || '—'}</td>
-                    <td style={TD}>{b.donerOrganization ?? '—'}</td>
-                    <td style={TD}>{b.fundType?.trim() || b.otherFundType?.trim() || '—'}</td>
-                    <td style={NUM}>{b.amount != null ? formatNpr(b.amount) : '—'}</td>
-                    <td style={NUM}>{b.expenditure != null ? formatNpr(b.expenditure) : '—'}</td>
-                    <td style={NUM}>{pct != null ? `${pct.toFixed(0)}%` : '—'}</td>
-                    <td style={TD}>{b.status?.trim() || '—'}</td>
+                    <td style={{ ...TD, maxWidth: 380 }}>{b.activityName?.trim() || '-'}</td>
+                    <td style={TD}>{b.donerOrganization ?? '-'}</td>
+                    <td style={TD}>{b.fundType?.trim() || b.otherFundType?.trim() || '-'}</td>
+                    <td style={NUM}>{b.amount != null ? formatNpr(b.amount) : '-'}</td>
+                    <td style={NUM}>{b.expenditure != null ? formatNpr(b.expenditure) : '-'}</td>
+                    <td style={NUM}>{pct != null ? `${pct.toFixed(0)}%` : '-'}</td>
+                    <td style={TD}>{b.status?.trim() || '-'}</td>
                     <td style={{ ...TD, whiteSpace: 'nowrap' }}>{fmtDate(b.projectStartDate)} → {fmtDate(b.projectEndDate)}</td>
                   </tr>
                 )
@@ -437,11 +478,11 @@ export default function DisastersPage() {
               </button>
             )}
             <p className="muted" style={{ marginTop: '.7rem' }}>
-              Largest lines first. {budgetStats.donors.length} distinct funders appear in the funder field — municipalities, NGOs and
-              mistyped or junk entries alike — so read the names as they were entered, not as a clean list.
+              Largest lines first. {budgetStats.donors.length} distinct funders appear in the funder field - municipalities, NGOs and
+              mistyped or junk entries alike - so read the names as they were entered, not as a clean list.
               {budgetStats.unpriced > 0 && ` ${budgetStats.unpriced} line${budgetStats.unpriced === 1 ? '' : 's'} carry no amount and`} {budgetStats.noSpend} have no expenditure recorded.
               BIPAD&apos;s DRR budget module is a pilot, and the portal&apos;s separate budget-header resource still holds demo records, so only
-              activity rows are shown. Spend is what the reporting body entered against the line — not an audited figure.
+              activity rows are shown. Spend is what the reporting body entered against the line - not an audited figure.
             </p>
           </>
         ) : <p className="muted" style={{ marginTop: '.75rem' }}>No budget lines published.</p>}
@@ -452,7 +493,7 @@ export default function DisastersPage() {
         <Wind size={15} style={{ color: 'var(--primary)', flexShrink: 0 }} />
         <p style={{ margin: 0, fontSize: '.62rem', color: 'var(--text-secondary)' }}>
           <strong style={{ fontSize: '.74rem', color: 'var(--text)' }}>Source: BIPAD / NDRRMA (bipadportal.gov.np), read live.</strong><br />
-          Incident records, loss detail, relief distributions and DRR budget lines are the government&apos;s published figures, reproduced unaltered — gaps and blanks included.
+          Incident records, loss detail, relief distributions and DRR budget lines are the government&apos;s published figures, reproduced unaltered - gaps and blanks included.
         </p>
       </div>
       <p className="muted" style={{ marginTop: '.5rem', fontSize: '.62rem', display: 'flex', alignItems: 'center', gap: '.3rem' }}>

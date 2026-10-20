@@ -72,7 +72,9 @@ export async function fetchBipadDistricts(): Promise<BipadDistrict[]> {
           bbox: Array.isArray(r.bbox) && r.bbox.length === 4 ? (r.bbox as [number, number, number, number]) : null,
         })
       }
-      url = json?.next ?? null
+      // `count` is a sentinel (9.2e18) on BIPAD, so `next` never goes null once the
+      // 77 real rows are exhausted — stop on a short/empty page instead.
+      url = rows.length < 100 ? null : (json?.next ?? null)
       if (out.length > 200) break
     }
   } catch {

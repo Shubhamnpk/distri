@@ -16,7 +16,7 @@ import {
 } from 'recharts'
 import { USD_SYMBOL } from '@/lib/currency'
 
-type DataPoint = { year: string; value: number | null }
+type DataPoint = { year: string; value: number | null; label?: string }
 
 function resolveColor(color: string): string {
   if (!color.startsWith('var(')) return color
@@ -101,13 +101,13 @@ type ChartRow = { name: string; value: number | null; forecast: number | null }
  * `forecast` so the dashed line starts exactly where the solid one ends.
  */
 function toRows(data: DataPoint[], forecastFrom?: number): ChartRow[] {
-  if (forecastFrom == null) return data.map(d => ({ name: d.year, value: d.value ?? 0, forecast: null }))
+  if (forecastFrom == null) return data.map(d => ({ name: d.label ?? d.year, value: d.value ?? 0, forecast: null }))
   let lastActual = -1
   data.forEach((d, i) => { if (Number(d.year) < forecastFrom && d.value != null) lastActual = i })
   return data.map((d, i) => {
     const isForecast = Number(d.year) >= forecastFrom
     return {
-      name: d.year,
+      name: d.label ?? d.year,
       value: isForecast ? null : d.value,
       forecast: isForecast ? d.value : i === lastActual ? d.value : null,
     }
@@ -116,10 +116,10 @@ function toRows(data: DataPoint[], forecastFrom?: number): ChartRow[] {
 
 /** Bars don't need the bridge point — only colour the forecast bars differently. */
 function toBarRows(data: DataPoint[], forecastFrom?: number): ChartRow[] {
-  if (forecastFrom == null) return data.map(d => ({ name: d.year, value: d.value ?? 0, forecast: null }))
+  if (forecastFrom == null) return data.map(d => ({ name: d.label ?? d.year, value: d.value ?? 0, forecast: null }))
   return data.map(d => {
     const isForecast = Number(d.year) >= forecastFrom
-    return { name: d.year, value: isForecast ? null : d.value, forecast: isForecast ? d.value : null }
+    return { name: d.label ?? d.year, value: isForecast ? null : d.value, forecast: isForecast ? d.value : null }
   })
 }
 
@@ -190,7 +190,7 @@ export function BarChart({
 
 /* ─── LINE / AREA CHART ─── */
 export function LineChart({
-  data, color = 'var(--primary)', height = 120, formatValue, title, showArea = true, showDelta = false, yAxis = false, forecastFrom,
+  data, color = 'var(--primary)', height = 120, formatValue, title, showArea = true, showDelta = false, yAxis = false, forecastFrom, xTicks, onHover,
 }: {
   data: DataPoint[]
   color?: string
@@ -201,6 +201,10 @@ export function LineChart({
   showDelta?: boolean
   yAxis?: boolean
   forecastFrom?: number
+  /** Explicit x-axis tick years (e.g. decadal labels plus the actual/forecast boundary). */
+  xTicks?: string[]
+  /** Reports the hovered data point value, or null when the pointer leaves the chart. */
+  onHover?: (value: number | null) => void
 }) {
   const { resolved, grid, tick } = useResolved(color)
   const format = formatValue || defaultFormat
@@ -217,7 +221,8 @@ export function LineChart({
         tick={{ fill: tick, fontSize: 7.5 }}
         tickLine={false}
         axisLine={false}
-        interval={rows.length <= 12 ? 0 : tickInterval(rows.length)}
+        interval={xTicks ? 0 : rows.length <= 12 ? 0 : tickInterval(rows.length)}
+        ticks={xTicks}
         minTickGap={24}
       />
       {yAxis && (
@@ -239,7 +244,16 @@ export function LineChart({
     <div>
       {title && <span style={{ fontSize: '.6rem', color: 'var(--text-tertiary)', display: 'block', marginBottom: '.35rem' }}>{title}</span>}
       <ResponsiveContainer width="100%" height={height}>
-        <ComposedChart data={rows} margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
+        <ComposedChart
+          data={rows}
+          margin={{ top: 8, right: 4, bottom: 0, left: 4 }}
+          onMouseMove={state => {
+            const raw = state?.activeTooltipIndex
+            const index = raw == null ? -1 : typeof raw === 'number' ? raw : Number(raw)
+            onHover?.(Number.isInteger(index) && index >= 0 ? (rows[index]?.value ?? null) : null)
+          }}
+          onMouseLeave={() => onHover?.(null)}
+        >
           <defs>
             <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={resolved} stopOpacity={0.2} />

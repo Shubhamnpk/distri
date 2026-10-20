@@ -13,20 +13,21 @@ import 'leaflet/dist/leaflet.css'
 import { projects, slugify } from '@/lib/data'
 import { projectSite } from '@/lib/project-coords'
 import { forecastDayLabel, isNptDay, isDayBySun, shortClock } from '@/lib/time'
-import { formatNprText } from '@/lib/currency'
+import { formatNpr, formatNprText } from '@/lib/currency'
 import { matchDistricts } from '@/lib/geo'
 import { fetchBipadDistricts, fetchDistrictPolygons, fetchLocalDistricts, districtsFromPolygons, provinceBbox, normName, fetchLocalMunicipalities, canonDistrictKey, fetchLocalProtected, fetchProvinceShapes, type BipadDistrict, type LocalDistrict, type LocalMunicipality } from '@/lib/district-geo'
 import { fetchHydroProjects, hydroKind, HYDRO_KIND_COLOR, HYDRO_KIND_LABEL, type HydroProject, type HydroKind } from '@/lib/hydro'
-import { fetchNepalHighways, type RoadFeatureCollection } from '@/lib/roads'
+import { OsmRoads } from '@/components/osm-roads'
 import { fetchNepalQuakes, fetchCurrentWeather, fetchCurrentPm25, fetchHourlyTemps, fetchPm25Grid, NEPAL_PM25_GRID, type NepalQuake, type CurrentWeather } from '@/lib/meteo'
 import { LineChart } from '@/components/charts'
 import { WeatherIcon } from '@/components/weather-icon'
 import { skyKind } from '@/lib/condition'
 import { skyMarkerSvg, quakePinSvg } from '@/lib/sky-svg'
+import { hazardPinSvg } from '@/lib/hazard-svg'
 import L from 'leaflet'
 import { fetchDhmForecast } from '@/lib/dhm'
-import { fetchBipadIncidents, fetchBipadRainStationsAll, fetchBipadRiverStationsAll } from '@/lib/bipad'
-import type { BipadIncident, BipadStation } from '@/lib/bipad'
+import { fetchBipadIncidents, fetchBipadRainStationsAll, fetchBipadRiverStationsAll, fetchBipadDistrictProfile, fetchBipadDistrictIds, fetchBipadQuakeRisk, fetchBipadRoadBlocks, fetchBipadPalikaCensus, fetchBipadHazards, fetchBipadIncidentDetail, fetchBipadLoss, fetchBipadIncidentPlace, type PalikaCensus } from '@/lib/bipad'
+import type { BipadIncident, BipadStation, DistrictProfile, BipadQuakeRisk, BipadRoadBlock, BipadHazard, BipadIncidentDetail, BipadLoss, BipadIncidentPlace } from '@/lib/bipad'
 import { useTheme } from '@/components/theme-provider'
 
 const PROVINCES = ['Koshi', 'Madhesh', 'Bagmati', 'Gandaki', 'Lumbini', 'Karnali', 'Sudurpashchim'] as const
@@ -240,6 +241,40 @@ function pm25Color(v: number): [number, number, number] {
 
 const PM25_HEAT_GRADIENT =
   'linear-gradient(90deg, #22c55e 0%, #facc15 24%, #f97316 44%, #ef4444 62%, #991b1b 80%, #7e22ce 100%)'
+
+const ROAD_STATUS: Record<string, { color: string; label: string }> = {
+  CLOSED: { color: '#dc2626', label: 'Closed' },
+  PARTIAL_OPEN: { color: '#f59e0b', label: 'Partially open' },
+  OPEN: { color: '#16a34a', label: 'Reopened' },
+}
+
+/** Only live obstructions are mapped: DoR's `status` is the latest reported state, so
+ *  reopened (OPEN) events are dropped rather than drawn as if the road were still shut. */
+const roadBlocked = (r: BipadRoadBlock) => r.status === 'CLOSED' || r.status === 'PARTIAL_OPEN'
+const roadClosed = (r: BipadRoadBlock) => r.status === 'CLOSED'
+
+/** "NH03" and "NH3" are the same highway — group labels and the DoR log on this key. */
+const roadRefKey = (s?: string | null) =>
+  (s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^NH0*(\d+)$/, 'NH$1')
+
+/** BIPAD's 24px line-art icons disappear at pin size, so incidents reuse the
+ *  hydro/quake approach: a bold inline-SVG glyph on the hazard's own colour. */
+function incidentPin(h?: BipadHazard, id?: number | null) {
+  return L.divIcon({
+    className: 'atlas-incident-pin',
+    html: hazardPinSvg(id ?? h?.id, h?.color || '#7c3aed'),
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+  })
+}
+
+/** DoR timestamps occasionally arrive as BS dates ("2083-03-29") — refuse those rather than print a year that cannot exist. */
+function roadWhen(s?: string | null): string | null {
+  if (!s) return null
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime()) || d.getFullYear() < 2000 || d.getFullYear() > 2100) return null
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
 
 /** The shape the heat fields are clipped to: country, open province, or open district. */
 type RainBoundary = { type?: string; features?: { properties?: { id?: number }; geometry?: unknown }[] } | null
@@ -661,9 +696,22 @@ function hash01(s: string): number {
 
 const NEPAL_BBOX: [[number, number], [number, number]] = [[26.2, 80.2], [30.4, 88.3]]
 
-type BasemapKey = 'topo' | 'satellite' | 'streets' | 'dark'
+type BasemapKey = 'osm' | 'terrain' | 'topo' | 'satellite'
 
-const BASEMAPS: Record<BasemapKey, { name: string; url: string; attribution: string; bg: string }> = {
+const BASEMAPS: Record<BasemapKey, { name: string; url: string; attribution: string; bg: string; maxNativeZoom?: number }> = {
+  osm: {
+    name: 'OpenStreetMap',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    bg: 'linear-gradient(135deg, #f6f2e8 0%, #e9e2d2 35%, #dce7d6 70%, #efe9dc 100%)',
+  },
+  terrain: {
+    name: 'Terrain',
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution: 'Map data &copy; OpenStreetMap contributors, SRTM | Style &copy; OpenTopoMap (CC-BY-SA)',
+    bg: 'linear-gradient(135deg, #eef1e2 0%, #d9e3c4 40%, #e6d8c0 72%, #c8d8bc 100%)',
+    maxNativeZoom: 17,
+  },
   topo: {
     name: 'Topo',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
@@ -676,28 +724,16 @@ const BASEMAPS: Record<BasemapKey, { name: string; url: string; attribution: str
     attribution: 'Tiles &copy; Esri, Maxar',
     bg: 'linear-gradient(135deg, #1a2a1a 0%, #2a3a1a 30%, #1a2a30 60%, #0a1a0a 100%)',
   },
-  streets: {
-    name: 'Streets',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; CARTO &copy; OSM',
-    bg: 'linear-gradient(135deg, #f8f4ec 0%, #e8e0cc 30%, #f8f4ec 60%, #d0c8b8 100%)',
-  },
-  dark: {
-    name: 'Dark',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; CARTO &copy; OSM',
-    bg: 'linear-gradient(135deg, #0a0f14 0%, #121920 40%, #1c2a20 70%, #0a0f14 100%)',
-  },
 }
 
-const BASEMAP_KEYS: BasemapKey[] = ['topo', 'satellite', 'streets', 'dark']
+const BASEMAP_KEYS: BasemapKey[] = ['osm', 'terrain', 'topo', 'satellite']
 
 function BasemapPreview({ kind, className = '' }: { kind: BasemapKey; className?: string }) {
   const strokes: Record<BasemapKey, ReactElement> = {
+    osm: <><path d="M0 23h64M32 0v46M0 9h64M0 37h64" stroke="#fff" strokeWidth="3.2"/><path d="M0 23h64M32 0v46" stroke="#e0d6bf" strokeWidth=".9"/><path d="M6 0v46M52 0v46" stroke="#f4d59a" strokeWidth="1.2"/></>,
+    terrain: <><path d="M0 18Q16 10 30 16T64 12M0 27Q18 20 32 26T64 22M0 36Q18 30 34 35T64 31" stroke="#8a9a62" strokeWidth="1.3" fill="none"/><path d="M8 44Q22 36 36 42T64 39" stroke="#b08a5a" strokeWidth="1.6" fill="none"/></>,
     topo: <><path d="M0 20Q16 14 32 18T64 16M0 30Q20 24 40 28T64 26M8 40Q24 34 40 38" stroke="#4a7c40" strokeWidth="1.5" fill="none"/><path d="M12 8q8-6 16 0t16 0" stroke="#78986c" fill="none"/></>,
     satellite: <><path d="M0 11Q13 5 23 13T48 10T64 14M0 34Q14 28 25 36T50 32T64 37" stroke="#91a77a" strokeWidth="3" fill="none" opacity=".65"/><path d="M9 0v46M37 0v46" stroke="#6c7160" strokeWidth="1" opacity=".7"/></>,
-    streets: <><path d="M0 23h64M32 0v46M0 10h64M0 36h64" stroke="#fff" strokeWidth="3"/><path d="M0 23h64M32 0v46" stroke="#d5cbb8" strokeWidth=".8"/></>,
-    dark: <><path d="M0 23h64M32 0v46M0 10h64M0 36h64" stroke="#345346" strokeWidth="1.5"/><circle cx="22" cy="16" r="2" fill="#34c99a"/><circle cx="44" cy="30" r="1.5" fill="#34c99a"/></>,
   }
   return <div className={`atlas-basemap-preview ${className}`} style={{ background: BASEMAPS[kind].bg }}><svg viewBox="0 0 64 46" preserveAspectRatio="none" aria-hidden="true">{strokes[kind]}</svg></div>
 }
@@ -857,6 +893,59 @@ function FitHelper({ bbox, skipNextFit }: { bbox: [[number, number], [number, nu
   return null
 }
 
+/** Drill into a picked blockage: at national zoom the tiles carry no named alignment,
+ *  so the road it sits on only becomes visible (and highlights) from z8 up. */
+function RoadFocus({ road }: { road: BipadRoadBlock | null }) {
+  const map = useMap()
+  const last = useRef<number | null>(null)
+  useEffect(() => {
+    if (!road?.point) { last.current = null; return }
+    if (last.current === road.id) return
+    last.current = road.id
+    const [lon, lat] = road.point.coordinates
+    if (map.getZoom() < 8) map.flyTo([lat, lon], 9, { duration: 0.9 })
+  }, [map, road])
+  return null
+}
+
+/** Centre of a polygon's coordinate bbox — only used to pick the right palika
+ *  census row when the boundary file's name differs from BIPAD's (e.g. the
+ *  boundary still says "Pokhara Lekhnath" while BIPAD files "Pokhara"). */
+function featureCenter(feature: unknown): [number, number] | null {
+  let w = 180, s = 90, e = -180, n = -90
+  const walk = (a: unknown) => {
+    if (!Array.isArray(a)) return
+    if (typeof a[0] === 'number' && typeof a[1] === 'number') {
+      const [lng, lat] = a as [number, number]
+      if (lng < w) w = lng
+      if (lng > e) e = lng
+      if (lat < s) s = lat
+      if (lat > n) n = lat
+      return
+    }
+    for (const b of a) walk(b)
+  }
+  walk((feature as { geometry?: { coordinates?: unknown } })?.geometry?.coordinates)
+  return w <= e ? [(w + e) / 2, (s + n) / 2] : null
+}
+
+/** Census row for a palika: name match first, then the nearest BIPAD centroid
+ *  (within the district's own palika list, so a rename cannot cross districts). */
+function palikaRow(c: { byName: Record<string, PalikaCensus>; rows: PalikaCensus[] }, m: LocalMunicipality): PalikaCensus | null {
+  const hit = c.byName[normName(m.name)]
+  if (hit) return hit
+  const ctr = featureCenter(m.feature)
+  if (!ctr) return null
+  let best: PalikaCensus | null = null
+  let bestD = Infinity
+  for (const r of c.rows) {
+    if (!r.centroid) continue
+    const d = (r.centroid[0] - ctr[0]) ** 2 + (r.centroid[1] - ctr[1]) ** 2
+    if (d < bestD) { bestD = d; best = r }
+  }
+  return best
+}
+
 /** Fly the view to a picked palika's own bounds (click on the inner map). */
 function MuniFocus({ muni }: { muni: LocalMunicipality | null }) {
   const map = useMap()
@@ -973,13 +1062,22 @@ export function NationalMap() {
   const [polyByName, setPolyByName] = useState<Record<string, Record<string, unknown>>>({})
   const [localDistricts, setLocalDistricts] = useState<LocalDistrict[]>([])
   const [hydro, setHydro] = useState<HydroProject[]>([])
-  const [roads, setRoads] = useState<RoadFeatureCollection | null>(null)
   const [rainStations, setRainStations] = useState<BipadStation[]>([])
   const [pm25Nodes, setPm25Nodes] = useState<(number | null)[] | null>(null)
+  const [roadBlocks, setRoadBlocks] = useState<BipadRoadBlock[]>([])
+  const [roadSel, setRoadSel] = useState<BipadRoadBlock | null>(null)
+  const [highwaySel, setHighwaySel] = useState<{ ref: string; name?: string } | null>(null)
+  const [incidents, setIncidents] = useState<BipadIncident[]>([])
+  const [incidentSel, setIncidentSel] = useState<BipadIncident | null>(null)
+  const [incidentExtra, setIncidentExtra] = useState<{ id: number; detail: BipadIncidentDetail | null; loss: BipadLoss | null; place: BipadIncidentPlace | null; loading: boolean } | null>(null)
+  const [hazards, setHazards] = useState<Record<number, BipadHazard>>({})
+  const [quakeRisk, setQuakeRisk] = useState<Record<number, BipadQuakeRisk>>({})
+  const [districtIds, setDistrictIds] = useState<Record<string, number> | null>(null)
+  const [profiles, setProfiles] = useState<Record<number, DistrictProfile | null>>({})
+  const [palikaCensus, setPalikaCensus] = useState<Record<number, { year: string; rows: PalikaCensus[]; byName: Record<string, PalikaCensus> } | null>>({})
   const [riverStations, setRiverStations] = useState<BipadStation[]>([])
   const [quakes, setQuakes] = useState<NepalQuake[]>([])
   const [stations, setStations] = useState<DhmStation[]>([])
-  const [incidents, setIncidents] = useState<BipadIncident[]>([])
   const [province, setProvince] = useState<string | null>(null)
   const [district, setDistrict] = useState<string | null>(null)
   const [stationSel, setStationSel] = useState<DhmStation | null>(null)
@@ -1001,7 +1099,7 @@ export function NationalMap() {
   const [allParks, setAllParks] = useState<LocalMunicipality[]>([])
   const [munisLoading, setMunisLoading] = useState(false)
   // The map opens quiet: only the live weather stations and the civic capital markers.
-  const [layers, setLayers] = useState<Layers>({ projects: false, hydro: false, quakes: false, quakesPast: false, weather: true, incidents: false, parks: false, roads: false, rain: false, pm25: false, rivers: false, capitals: true })
+  const [layers, setLayers] = useState<Layers>({ projects: false, hydro: false, quakes: false, quakesPast: false, weather: true, incidents: false, parks: false, roads: true, rain: false, pm25: false, rivers: false, capitals: true })
   const [parkSel, setParkSel] = useState<LocalMunicipality | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
@@ -1011,7 +1109,7 @@ export function NationalMap() {
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null)
   const [zoomLevel, setZoomLevel] = useState(7)
   const [centerCoord, setCenterCoord] = useState<{ lat: number; lng: number }>({ lat: 28.4, lng: 84.2 })
-  const [basemap, setBasemap] = useState<BasemapKey>('topo')
+  const [basemap, setBasemap] = useState<BasemapKey>('osm')
   const skipNextRegionFit = useRef(false)
   const autoZoomPending = useRef(false)
   const [isBasemapMenuOpen, setIsBasemapMenuOpen] = useState(false)
@@ -1087,6 +1185,9 @@ export function NationalMap() {
         else if (hydroSel) setHydroSel(null)
         else if (riverSel) setRiverSel(null)
         else if (rainSel) setRainSel(null)
+        else if (incidentSel) setIncidentSel(null)
+        else if (highwaySel) setHighwaySel(null)
+        else if (roadSel) setRoadSel(null)
         else if (quakeSel) setQuakeSel(null)
         else if (parkSel) setParkSel(null)
         else if (muniSel) setMuniSel(null)
@@ -1096,7 +1197,25 @@ export function NationalMap() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [searchFocused, isRegionMenuOpen, isInspectorOpen, isLegendOpen, stationSel, hydroSel, riverSel, rainSel, quakeSel, parkSel, muniSel, district, province])
+  }, [searchFocused, isRegionMenuOpen, isInspectorOpen, isLegendOpen, stationSel, hydroSel, riverSel, rainSel, roadSel, highwaySel, incidentSel, quakeSel, parkSel, muniSel, district, province])
+
+  /** The pin only knows the slim list row; the card joins the full record, the
+   *  linked loss row (casualties/damage) and the ward → palika → district names. */
+  useEffect(() => {
+    const i = incidentSel
+    if (!i) { setIncidentExtra(null); return }
+    let cancelled = false
+    setIncidentExtra({ id: i.id, detail: null, loss: null, place: null, loading: true })
+    ;(async () => {
+      const detail = await fetchBipadIncidentDetail(i.id)
+      const [loss, place] = await Promise.all([
+        i.loss ? fetchBipadLoss(i.loss) : Promise.resolve(null),
+        detail?.wards?.[0] ? fetchBipadIncidentPlace(detail.wards[0]) : Promise.resolve(null),
+      ])
+      if (!cancelled) setIncidentExtra({ id: i.id, detail, loss, place, loading: false })
+    })()
+    return () => { cancelled = true }
+  }, [incidentSel])
 
   useEffect(() => {
     let cancelled = false
@@ -1120,11 +1239,19 @@ export function NationalMap() {
       .then(p => { if (!cancelled) { setPolyByName(p.byName); setPolyCount(p.geojson.features.length) } })
       .catch(() => { if (!cancelled) setPolyCount(0) })
     fetchHydroProjects().then(h => { if (!cancelled) setHydro(h) }).catch(() => {})
-    fetchNepalHighways().then(r => { if (!cancelled) setRoads(r) }).catch(() => {})
     fetchBipadRainStationsAll().then(s => { if (!cancelled) setRainStations(s) }).catch(() => {})
     fetchBipadRiverStationsAll().then(s => { if (!cancelled) setRiverStations(s) }).catch(() => {})
     // The PM2.5 field is ~230 model nodes in one request, like the rain gauges.
     fetchPm25Grid(NEPAL_PM25_GRID).then(n => { if (!cancelled) setPm25Nodes(n) }).catch(() => {})
+    // Department of Roads blockage log: ~405 events over ~6 months, one request.
+    fetchBipadRoadBlocks().then(r => { if (!cancelled) setRoadBlocks(r.results) }).catch(() => {})
+    // Per-district seismic risk: 77 rows, one request, keyed by BIPAD district id.
+    fetchBipadQuakeRisk().then(list => {
+      if (!cancelled) setQuakeRisk(Object.fromEntries(list.map(r => [r.district, r])))
+    }).catch(() => {})
+    // Name → BIPAD id: district ids in this component can come from polygon files,
+    // whose ids are synthetic, so the census/risk joins go through the name.
+    fetchBipadDistrictIds().then(m => { if (!cancelled) setDistrictIds(m) }).catch(() => { if (!cancelled) setDistrictIds({}) })
     fetchNepalQuakes(100).then(q => { if (!cancelled) setQuakes(q) }).catch(() => {})
     fetchDhmForecast().then(f => {
       if (cancelled) return
@@ -1139,6 +1266,9 @@ export function NationalMap() {
       })))
     }).catch(() => {})
     fetchBipadIncidents(1000, 'id,title,point,hazard,incident_on,source,verified,loss').then(i => { if (!cancelled) setIncidents(i.results) }).catch(() => {})
+    fetchBipadHazards().then(h => {
+      if (!cancelled) setHazards(Object.fromEntries(h.results.map(x => [Number(x.id), x])))
+    }).catch(() => {})
     // Load protected areas for ALL provinces upfront so parks show nation-wide
     const PROVINCES_ALL = ['Koshi', 'Madhesh', 'Bagmati', 'Gandaki', 'Lumbini', 'Karnali', 'Sudurpashchim']
     Promise.all(PROVINCES_ALL.map(p => fetchLocalProtected(p)))
@@ -1218,6 +1348,29 @@ export function NationalMap() {
 
   // A palika belongs to one district: drop the pick when the district changes.
   useEffect(() => { setMuniSel(null) }, [district, province])
+
+  const districtId = district && districtIds ? districtIds[canonDistrictKey(district)] ?? null : null
+  /** Census profile: the API files it per palika, so it is fetched once per district opened
+   *  (11–22 rows) and cached in `profiles` for the rest of the session. */
+  useEffect(() => {
+    if (districtId == null || profiles[districtId] !== undefined) return
+    let cancelled = false
+    fetchBipadDistrictProfile(districtId)
+      .then(p => { if (!cancelled) setProfiles(cur => ({ ...cur, [districtId]: p })) })
+      .catch(() => { if (!cancelled) setProfiles(cur => ({ ...cur, [districtId]: null })) })
+    return () => { cancelled = true }
+  }, [districtId, profiles])
+
+  /** Palika-level census, fetched only when a palika is opened (one extra request
+   *  per district) and cached like the district profile. */
+  useEffect(() => {
+    if (!muniSel || districtId == null || palikaCensus[districtId] !== undefined) return
+    let cancelled = false
+    fetchBipadPalikaCensus(districtId)
+      .then(c => { if (!cancelled) setPalikaCensus(cur => ({ ...cur, [districtId]: c })) })
+      .catch(() => { if (!cancelled) setPalikaCensus(cur => ({ ...cur, [districtId]: null })) })
+    return () => { cancelled = true }
+  }, [muniSel, districtId, palikaCensus])
 
   const muniFeatures = useMemo(
     () => ({
@@ -1494,7 +1647,9 @@ export function NationalMap() {
     quakesPast: pastQuakes.length,
     weather: visibleStations.length,
     incidents: visibleIncidents.length,
-    roads: roads?.features.length ?? 0,
+    roadblocks: roadBlocks.filter(r => r.point && roadBlocked(r)).length,
+    roadClosed: roadBlocks.filter(r => r.point && roadClosed(r)).length,
+    roadPartial: roadBlocks.filter(r => r.point && r.status === 'PARTIAL_OPEN').length,
     rain: rainHeat.filter(g => g.mm > 0).length,
     pm25: pm25Heat.filter(p => p.v > 25).length,
     rivers: visibleRivers.length,
@@ -1580,12 +1735,13 @@ export function NationalMap() {
           worldCopyJump={true}
           zoomControl={false}
           attributionControl={false}
-          style={{ height: '100%', width: '100%', background: basemap === 'dark' ? '#0a0f14' : '#eef2f0' }}
+          style={{ height: '100%', width: '100%', background: '#eef2f0' }}
         >
           <TileLayer
             key={basemap}
             url={BASEMAPS[basemap].url}
             attribution={BASEMAPS[basemap].attribution}
+            maxNativeZoom={BASEMAPS[basemap].maxNativeZoom}
           />
           <MapInstanceBridge
             onMapReady={setMapInstance}
@@ -1595,6 +1751,7 @@ export function NationalMap() {
           />
           <FitHelper bbox={fit ?? NEPAL_BBOX} skipNextFit={skipNextRegionFit} />
           <MuniFocus muni={muniSel} />
+          <RoadFocus road={roadSel} />
           <MapDeselect onEmptyClick={handleEmptyClick} />
           {/* Stacking is by pane, not load order: polygons stay low so the
               asynchronously-loaded shapes can never cover the clickable pins. */}
@@ -1618,13 +1775,13 @@ export function NationalMap() {
               interactive={false}
             />
           )}
-          {layers.roads && roads && (
-            <GeoJSON
-              key="roads"
-              pane="shapes"
-              data={roads as any}
-              style={() => ({ color: '#b45309', weight: 2, opacity: 0.7, fill: false })}
-              onEachFeature={(f: any, l: any) => { l.bindTooltip('National highway', { sticky: true }) }}
+          {layers.roads && (
+            <OsmRoads
+              visible={layers.roads}
+              selectedRef={highwaySel?.ref ?? roadSel?.roadRefno ?? null}
+              color={highwaySel ? '#b45309' : ROAD_STATUS[roadSel?.status ?? '']?.color ?? '#dc2626'}
+              outline={provinceGeo}
+              onSelectRef={(ref, name) => { setHighwaySel({ ref, name }); setRoadSel(null) }}
             />
           )}
           {provinceGeo && (
@@ -1804,17 +1961,43 @@ export function NationalMap() {
               <Tooltip direction="top" offset={[0, -18]}>{s.name}{s.condition ? ` · ${s.condition}` : ''}</Tooltip>
             </Marker>
           ))}
-          {layers.incidents && visibleIncidents.map(i => (
-            <CircleMarker
-              key={`i-${i.id}`}
-              pane="points"
-              center={[i.point!.coordinates[1], i.point!.coordinates[0]]}
-              radius={4}
-              pathOptions={{ color: '#ffffff', weight: 1, fillColor: '#7c3aed', fillOpacity: 0.9 }}
-            >
-              <Tooltip direction="top" offset={[0, -6]}>{i.title}</Tooltip>
-            </CircleMarker>
-          ))}
+          {layers.incidents && visibleIncidents.map(i => {
+            const hz = i.hazard != null ? hazards[i.hazard] : undefined
+            const kind = hz?.title ?? hz?.titleEn ?? 'Incident'
+            return (
+              <Marker
+                key={`i-${i.id}`}
+                pane="points"
+                position={[i.point!.coordinates[1], i.point!.coordinates[0]]}
+                icon={incidentPin(hz, i.hazard)}
+                eventHandlers={{ click: () => setIncidentSel(cur => (cur?.id === i.id ? null : i)) }}
+              >
+                <Tooltip direction="top" offset={[0, -10]}>
+                  <strong>{kind}</strong> · {i.title}
+                </Tooltip>
+              </Marker>
+            )
+          })}
+          {layers.roads && roadBlocks.filter(r => r.point && roadBlocked(r)).map(r => {
+            const st = ROAD_STATUS[r.status ?? ''] ?? ROAD_STATUS.CLOSED
+            const shut = roadClosed(r)
+            return (
+              <CircleMarker
+                key={`rb-${r.id}`}
+                pane="points"
+                center={[r.point!.coordinates[1], r.point!.coordinates[0]]}
+                radius={shut ? 7 : 5}
+                pathOptions={{ color: '#ffffff', weight: 1, fillColor: st.color, fillOpacity: shut ? 0.95 : 0.8 }}
+                eventHandlers={{ click: () => { setRoadSel(cur => (cur?.id === r.id ? null : r)); setHighwaySel(null) } }}
+              >
+                <Tooltip direction="top" offset={[0, -6]} permanent={shut}>
+                  {shut
+                    ? `${r.roadRefno ?? 'Road'} · closed`
+                    : `${r.roadRefno ?? 'Road'} · ${st.label.toLowerCase()} · ${r.location ?? r.title}`}
+                </Tooltip>
+              </CircleMarker>
+            )
+          })}
           {layers.rain && (
             <RainHeatLayer
               gauges={rainHeat}
@@ -2174,10 +2357,10 @@ export function NationalMap() {
             { key: 'pm25', label: 'Air PM2.5', color: '#7e22ce', count: counts.pm25 },
             { key: 'rivers', label: 'Rivers', color: '#dc2626', count: counts.rivers },
             { key: 'weather', label: 'Weather', color: '#2563eb', count: counts.weather },
-            { key: 'roads', label: 'Highways', color: '#b45309', count: counts.roads },
+            { key: 'roads', label: 'Roads', color: '#b45309', count: counts.roadblocks },
             { key: 'parks', label: 'Protected', color: '#0f766e', count: displayParks.length },
             { key: 'capitals', label: 'Capitals', color: '#475569', count: counts.capitals },
-          ] as { key: keyof Layers; label: string; color: string; count: number }[]).map(({ key, label, color, count }) => {
+          ] as { key: keyof Layers; label: string; color: string; count: number | null }[]).map(({ key, label, color, count }) => {
             const active = layers[key]
             return (
               <button
@@ -2187,7 +2370,7 @@ export function NationalMap() {
                 style={{
                   borderColor: active ? color : 'transparent',
                 }}
-                title={`${label} (${count}) · Click to toggle on/off`}
+                title={`${label}${count != null ? ` (${count})` : ''} · Click to toggle on/off`}
               >
                 <span
                   style={{
@@ -2200,18 +2383,20 @@ export function NationalMap() {
                   }}
                 />
                 <span>{label}</span>
-                <span
-                  style={{
-                    fontSize: '.62rem',
-                    fontWeight: 700,
-                    padding: '1px 5px',
-                    borderRadius: 99,
-                    background: active ? `${color}25` : 'var(--bg-sunken)',
-                    color: active ? color : 'var(--text-tertiary)',
-                  }}
-                >
-                  {count}
-                </span>
+                {count != null && (
+                  <span
+                    style={{
+                      fontSize: '.62rem',
+                      fontWeight: 700,
+                      padding: '1px 5px',
+                      borderRadius: 99,
+                      background: active ? `${color}25` : 'var(--bg-sunken)',
+                      color: active ? color : 'var(--text-tertiary)',
+                    }}
+                  >
+                    {count}
+                  </span>
+                )}
               </button>
             )
           })}
@@ -2591,6 +2776,49 @@ export function NationalMap() {
           <p className="muted" style={{ fontSize: '.62rem', margin: '.6rem 0 0' }}>
             Click another palika to switch, or the district outline to step back out.
           </p>
+          {(() => {
+            const c = districtId != null ? palikaCensus[districtId] : undefined
+            if (districtId == null) return null
+            const row = c ? palikaRow(c, muniSel) : null
+            if (c === undefined) return <p className="muted" style={{ fontSize: '.62rem', margin: '.55rem 0 0' }}>Loading palika census…</p>
+            if (c === null || !row) return <p className="muted" style={{ fontSize: '.62rem', margin: '.55rem 0 0' }}>No census row matched this palika.</p>
+            const dist = profiles[districtId]?.population ?? 0
+            const share = dist > 0 ? (row.population / dist) * 100 : null
+            const femaleShare = row.population > 0 ? (row.female / row.population) * 100 : null
+            return (
+              <div style={{ marginTop: '.75rem', paddingTop: '.7rem', borderTop: '1px solid var(--border-light)' }}>
+                <p className="eyebrow" style={{ margin: '0 0 .45rem' }}>CENSUS PROFILE · {row.censusYear}</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.4rem' }}>
+                  {[
+                    ['Population', row.population.toLocaleString('en-US'), '#2563eb'],
+                    ['Households', row.households.toLocaleString('en-US'), '#0891b2'],
+                    ['Literate · 5+', row.literacy != null ? `${row.literacy.toFixed(0)}%` : '—', '#16a34a'],
+                    ['Share of district', share != null ? `${share.toFixed(1)}%` : '—', '#7c3aed'],
+                  ].map(([label, val, c2]) => (
+                    <div key={label as string} style={{ padding: '.45rem .6rem' }} className="bg-sunken rounded-[8px]">
+                      <span style={{ fontSize: '.52rem', letterSpacing: '.07em', textTransform: 'uppercase', fontWeight: 700 }} className="text-tertiary">{label}</span>
+                      <strong style={{ display: 'block', fontSize: '.95rem', marginTop: '.05rem', color: c2 as string }}>{val}</strong>
+                    </div>
+                  ))}
+                </div>
+                {femaleShare != null && (
+                  <div style={{ marginTop: '.6rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.55rem', fontWeight: 700 }} className="text-tertiary">
+                      <span>Male {row.male.toLocaleString('en-US')}</span>
+                      <span>Female {row.female.toLocaleString('en-US')}</span>
+                    </div>
+                    <div style={{ display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden', marginTop: '.25rem' }}>
+                      <span style={{ width: `${100 - femaleShare}%`, background: '#2563eb' }} />
+                      <span style={{ width: `${femaleShare}%`, background: '#db2777' }} />
+                    </div>
+                  </div>
+                )}
+                <p className="muted" style={{ fontSize: '.58rem', margin: '.55rem 0 0' }}>
+                  Census {row.censusYear} counts as filed for this palika (NDRRMA/BIPAD){share == null ? '' : ' — the share is computed here from the district total'}.
+                </p>
+              </div>
+            )
+          })()}
         </div>
       )}
 
@@ -2619,6 +2847,289 @@ export function NationalMap() {
           </div>
         </div>
       )}
+
+      {/* Incident card: slim list row + full record + linked loss + ward/palika/district */}
+      {incidentSel && layers.incidents && (() => {
+        const i = incidentSel
+        const hz = i.hazard != null ? hazards[i.hazard] : undefined
+        const kind = hz?.title ?? hz?.titleEn ?? 'Incident'
+        const t = incidentDate(i)
+        const when = Number.isNaN(t) ? null : new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kathmandu' })
+        const extra = incidentExtra?.id === i.id ? incidentExtra : null
+        const det = extra?.detail
+        const loss = extra?.loss
+        const place = extra?.place
+        const raw = i as unknown as Record<string, unknown>
+        const source = (typeof det?.source === 'string' ? det.source : null) ?? (typeof raw.source === 'string' ? raw.source : typeof raw.dataSource === 'string' ? raw.dataSource : null)
+        const coords = i.point ? `${i.point.coordinates[1].toFixed(3)}°N, ${i.point.coordinates[0].toFixed(3)}°E` : null
+        const local = place
+          ? [[place.municipality, place.municipalityType].filter(Boolean).join(' ') + (place.ward ? `-${place.ward}` : ''), place.district].filter(Boolean).join(', ')
+          : ''
+        const rows: [string, string][] = [
+          ['Date', when ?? 'not given'],
+          ['Location', local || coords || '—'],
+          ['Source', source ? source.replace(/_/g, ' ') : 'not given'],
+          ['Verified', i.verified ? 'yes' : 'not verified'],
+        ]
+        const n = (v?: number | null) => typeof v === 'number' ? v.toLocaleString('en-US') : '—'
+        const impact: [string, string][] = loss ? [
+          ['Deaths', n(loss.peopleDeathCount)],
+          ['Missing', n(loss.peopleMissingCount)],
+          ['Injured', n(loss.peopleInjuredCount)],
+          ['Families', n(loss.familyAffectedCount)],
+        ] : []
+        const detailRows: [string, string][] = []
+        if (loss) {
+          if (loss.peopleAffectedCount) detailRows.push(['People affected', n(loss.peopleAffectedCount)])
+          if (loss.familyRelocatedCount) detailRows.push(['Relocated', n(loss.familyRelocatedCount)])
+          if (loss.familyEvacuatedCount) detailRows.push(['Evacuated', n(loss.familyEvacuatedCount)])
+          if (loss.infrastructureDestroyedHouseCount) detailRows.push(['Houses destroyed', n(loss.infrastructureDestroyedHouseCount)])
+          if (loss.infrastructureAffectedHouseCount) detailRows.push(['Houses damaged', n(loss.infrastructureAffectedHouseCount)])
+          if (loss.livestockDestroyedCount) detailRows.push(['Livestock lost', n(loss.livestockDestroyedCount)])
+          detailRows.push(['Estimated loss', typeof loss.estimatedLoss === 'number' ? formatNpr(loss.estimatedLoss) : 'not filed'])
+        }
+        return (
+          <div className="atlas-float atlas-station">
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '.5rem' }}>
+              <div>
+                <p className="eyebrow" style={{ margin: 0 }}>INCIDENT · BIPAD</p>
+                <strong style={{ fontSize: '.9rem', display: 'block', marginTop: '.15rem', lineHeight: 1.3 }}>{i.title}</strong>
+                {det?.titleNe && (
+                  <p lang="ne" className="text-secondary" style={{ margin: '.15rem 0 0', fontSize: '.66rem', lineHeight: 1.45 }}>{det.titleNe}</p>
+                )}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: '.35rem', fontSize: '.58rem', fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', padding: '.15rem .45rem', borderRadius: 99, background: `${hz?.color ?? '#7c3aed'}1f`, color: hz?.color ?? '#7c3aed' }}>
+                  <span style={{ display: 'inline-flex', lineHeight: 0 }} dangerouslySetInnerHTML={{ __html: hazardPinSvg(i.hazard, hz?.color, 14) }} />
+                  {kind}
+                </span>
+              </div>
+              <button onClick={() => setIncidentSel(null)} aria-label="Close incident" style={{ fontSize: '.8rem', fontWeight: 700 }} className="text-tertiary">✕</button>
+            </div>
+            <div style={{ marginTop: '.5rem', display: 'flex', flexDirection: 'column', gap: '.28rem', fontSize: '.66rem' }}>
+              {rows.map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', gap: '.5rem', alignItems: 'baseline' }}>
+                  <span style={{ width: 62, flexShrink: 0 }} className="text-tertiary">{k}</span>
+                  <span style={{ flex: 1 }}>{v}</span>
+                </div>
+              ))}
+              {coords && local && (
+                <div style={{ display: 'flex', gap: '.5rem', alignItems: 'baseline' }}>
+                  <span style={{ width: 62, flexShrink: 0 }} className="text-tertiary">Coords</span>
+                  <span style={{ flex: 1 }}>{coords}</span>
+                </div>
+              )}
+            </div>
+            {impact.length > 0 && (
+              <>
+                <p className="eyebrow" style={{ margin: '.7rem 0 .3rem', fontSize: '.52rem' }}>LOSS · LINKED BIPAD RECORD</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
+                  {impact.map(([k, v]) => (
+                    <div key={k} className="bg-sunken" style={{ borderRadius: 6, padding: '.35rem .2rem', textAlign: 'center' }}>
+                      <strong style={{ display: 'block', fontSize: '.82rem', lineHeight: 1.2 }}>{v}</strong>
+                      <span className="text-tertiary" style={{ display: 'block', fontSize: '.48rem', fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', marginTop: 1 }}>{k}</span>
+                    </div>
+                  ))}
+                </div>
+                {detailRows.length > 0 && (
+                  <div style={{ marginTop: '.4rem', display: 'flex', flexDirection: 'column', gap: '.24rem', fontSize: '.64rem' }}>
+                    {detailRows.map(([k, v]) => (
+                      <div key={k} style={{ display: 'flex', gap: '.5rem', alignItems: 'baseline' }}>
+                        <span style={{ width: 96, flexShrink: 0 }} className="text-tertiary">{k}</span>
+                        <span style={{ flex: 1 }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+            {extra?.loading && (
+              <p className="muted" style={{ fontSize: '.58rem', margin: '.55rem 0 0' }}>Loading the linked BIPAD loss record…</p>
+            )}
+            {extra && !extra.loading && !loss && (
+              <p className="muted" style={{ fontSize: '.58rem', margin: '.55rem 0 0' }}>
+                No loss record is linked to this incident; casualties and damage may not have been filed yet.
+              </p>
+            )}
+            {det?.cause && (
+              <p style={{ margin: '.55rem 0 0', fontSize: '.64rem' }} className="text-secondary">
+                <strong>Cause:</strong> {det.cause}
+              </p>
+            )}
+            {det?.description && (
+              <p style={{ margin: '.3rem 0 0', fontSize: '.64rem' }} className="text-secondary">
+                <strong>Details:</strong> {det.description}
+              </p>
+            )}
+            {det?.verificationMessage && (
+              <p style={{ margin: '.3rem 0 0', fontSize: '.6rem' }} className="text-tertiary">
+                <strong>Verification note:</strong> {det.verificationMessage}
+              </p>
+            )}
+            <p className="muted" style={{ fontSize: '.56rem', margin: '.55rem 0 0' }}>
+              Incident and loss figures are as filed on BIPAD (NDRRMA); zeros are filed zeros, not missing values. Relief payouts are a separate, sparse dataset.
+            </p>
+          </div>
+        )
+      })()}
+
+      {/* Highway card: opened by clicking an NHxx label on the road layer */}
+      {highwaySel && layers.roads && !roadSel && (() => {
+        const hw = highwaySel.ref
+        const key = roadRefKey(hw)
+        const rows = roadBlocks.filter(r => roadRefKey(r.roadRefno) === key)
+        const active = rows.filter(roadBlocked)
+        const closed = active.filter(roadClosed).length
+        const partial = active.length - closed
+        const names = new Map<string, number>()
+        for (const r of active) if (r.title) names.set(r.title, (names.get(r.title) ?? 0) + 1)
+        const name = highwaySel.name ?? [...names.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? `Highway ${hw}`
+        const hit = [...new Set(active.map(r => r.district).filter((x): x is number => typeof x === 'number'))]
+          .map(id => districts.find(d => d.id === id)?.name ?? `District ${id}`)
+        const causes = new Map<string, number>()
+        for (const r of active) if (r.closureReason) causes.set(r.closureReason, (causes.get(r.closureReason) ?? 0) + 1)
+        const cause = [...causes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
+        const starts = active.map(r => r.dateRoadblockStart ?? '').filter(s => /^\d{4}-\d{2}-\d{2}/.test(s) && Number(s.slice(0, 4)) < 2100).sort()
+        const latest = roadWhen(starts[starts.length - 1])
+        const list = [...active].sort((a, b) => (b.dateRoadblockStart ?? '').localeCompare(a.dateRoadblockStart ?? '')).slice(0, 5)
+        return (
+          <div className="atlas-float atlas-station">
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '.5rem' }}>
+              <div>
+                <p className="eyebrow" style={{ margin: 0 }}>HIGHWAY · {hw}</p>
+                <strong style={{ fontSize: '.95rem', display: 'block', marginTop: '.15rem', lineHeight: 1.3 }}>{name}</strong>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: '.35rem', fontSize: '.58rem', fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', padding: '.15rem .45rem', borderRadius: 99, background: `${closed ? '#dc2626' : partial ? '#f59e0b' : '#16a34a'}1f`, color: closed ? '#dc2626' : partial ? '#f59e0b' : '#16a34a' }}>
+                  <span style={{ width: 6, height: 6, borderRadius: 99, background: closed ? '#dc2626' : partial ? '#f59e0b' : '#16a34a' }} />
+                  {active.length ? `${closed} closed · ${partial} partial` : 'no live blockage'}
+                </span>
+              </div>
+              <button onClick={() => setHighwaySel(null)} aria-label="Close highway" style={{ fontSize: '.8rem', fontWeight: 700 }} className="text-tertiary">✕</button>
+            </div>
+            <div style={{ marginTop: '.55rem', display: 'flex', flexDirection: 'column', gap: '.28rem', fontSize: '.66rem' }}>
+              {([
+                ['Live blocks', String(active.length)],
+                ['Events in log', `${rows.length} (last ~6 months)`],
+                ['Districts', hit.length ? `${hit.slice(0, 4).join(', ')}${hit.length > 4 ? ` +${hit.length - 4}` : ''}` : 'not given'],
+                ['Latest block', latest ?? 'not given'],
+                ['Main cause', cause ?? 'not recorded'],
+                ['Length', 'not published in this log'],
+              ] as [string, string][]).map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', gap: '.5rem', alignItems: 'baseline' }}>
+                  <span style={{ width: 84, flexShrink: 0 }} className="text-tertiary">{k}</span>
+                  <span style={{ flex: 1 }}>{v}</span>
+                </div>
+              ))}
+            </div>
+            {list.length > 0 && (
+              <div style={{ marginTop: '.6rem', borderTop: '1px solid var(--border-light, #e7e5e4)', paddingTop: '.45rem' }}>
+                <p className="eyebrow" style={{ margin: '0 0 .3rem', fontSize: '.52rem' }}>BLOCKAGES ON THIS HIGHWAY</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {list.map(r => {
+                    const st = ROAD_STATUS[r.status ?? ''] ?? ROAD_STATUS.CLOSED
+                    return (
+                      <button key={r.id} onClick={() => { setRoadSel(r); setHighwaySel(null) }}
+                        title={`Open ${r.location ?? r.title}`}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left', padding: '2px 0', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '.63rem', color: 'var(--text)' }}>
+                        <span style={{ width: 6, height: 6, borderRadius: 99, background: st.color, flexShrink: 0 }} />
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.location ?? r.title}</span>
+                        <span style={{ fontSize: '.55rem', color: st.color, fontWeight: 800, flexShrink: 0 }}>{st.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            <p style={{ margin: '.55rem 0 0', fontSize: '.6rem', fontWeight: 700, color: '#b45309' }}>
+              ━ {hw} alignment highlighted on the map
+            </p>
+            <p className="muted" style={{ fontSize: '.56rem', margin: '.35rem 0 0' }}>
+              DoR blockage log via BIPAD; alignment from OpenStreetMap. Blockage history covers roughly six months, so “live blocks” is a snapshot, not a road condition.
+            </p>
+          </div>
+        )
+      })()}
+
+      {/* Road blockage card: Department of Roads log carried by BIPAD */}
+      {roadSel && (() => {
+        const r = roadSel
+        const st = ROAD_STATUS[r.status ?? ''] ?? ROAD_STATUS.CLOSED
+        const shut = roadClosed(r)
+        const started = roadWhen(r.dateRoadblockStart)
+        const ended = roadWhen(r.dateRoadblockEnd)
+        const eta = roadWhen(r.dateRoadblockEndEstimated)
+        const rows: [string, string][] = [
+          ['Location', r.location ?? '—'],
+          ['Division', r.division ?? '—'],
+          ['Chainage', r.chainage ?? '—'],
+          ['Blocked since', started ?? 'date not given'],
+          ['Reopen ETA', r.repairEta || eta || 'not given'],
+        ]
+        if (ended) rows.push(['Reopened (reported)', ended])
+        if (r.actualRepairTime && !shut) rows.push(['Actual repair', r.actualRepairTime])
+        if (r.contactPerson) rows.push(['Roads contact', r.contactPerson])
+        return (
+          <div className="atlas-float atlas-station">
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '.5rem' }}>
+              <div>
+                <p className="eyebrow" style={{ margin: 0 }}>ROAD BLOCK · {r.roadRefno ?? 'NEPAL'}</p>
+                <strong style={{ fontSize: '.95rem', display: 'block', marginTop: '.15rem', lineHeight: 1.3 }}>{r.title}</strong>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: '.35rem', fontSize: '.58rem', fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', padding: '.15rem .45rem', borderRadius: 99, background: `${st.color}1f`, color: st.color }}>
+                  <span style={{ width: 6, height: 6, borderRadius: 99, background: st.color }} />
+                  {st.label}
+                </span>
+              </div>
+              <button onClick={() => setRoadSel(null)} aria-label="Close road block" style={{ fontSize: '.8rem', fontWeight: 700 }} className="text-tertiary">✕</button>
+            </div>
+            <p style={{ margin: '.55rem 0 0', fontSize: '.7rem', fontWeight: 600 }}>
+              {r.closureReason ?? 'Cause not recorded'}
+            </p>
+            <div style={{ marginTop: '.5rem', display: 'flex', flexDirection: 'column', gap: '.28rem', fontSize: '.66rem' }}>
+              {rows.map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', gap: '.5rem', alignItems: 'baseline' }}>
+                  <span style={{ width: 86, flexShrink: 0 }} className="text-tertiary">{k}</span>
+                  <span style={{ flex: 1 }}>{v}</span>
+                </div>
+              ))}
+            </div>
+            {r.effortsBeingMade && (
+              <p style={{ margin: '.55rem 0 0', fontSize: '.64rem' }} className="text-secondary">
+                <strong>Efforts:</strong> {r.effortsBeingMade}
+              </p>
+            )}
+            {r.remarks && r.remarks.toLowerCase() !== (r.division ?? '').toLowerCase() && (
+              <p style={{ margin: '.3rem 0 0', fontSize: '.62rem' }} className="text-secondary">
+                <strong>Remarks:</strong> {r.remarks}
+              </p>
+            )}
+            {r.images && r.images.length > 0 && (
+              <div style={{ marginTop: '.65rem', borderTop: '1px solid var(--border-light, #e7e5e4)', paddingTop: '.55rem' }}>
+                <p className="eyebrow" style={{ margin: '0 0 .35rem', fontSize: '.52rem' }}>SITE PHOTOS · {r.images.length}</p>
+                <div style={{ display: 'grid', gridTemplateColumns: r.images.length === 1 ? '1fr' : 'repeat(3, 1fr)', gap: 4 }}>
+                  {r.images.slice(0, 3).map((u, i) => (
+                    <a key={`${u}-${i}`} href={u} target="_blank" rel="noreferrer" title={`Open site photo ${i + 1}`}
+                      className="bg-sunken"
+                      style={{ display: 'block', aspectRatio: r.images!.length === 1 ? '16 / 9' : '4 / 3', overflow: 'hidden', borderRadius: 6 }}>
+                      <img src={u} alt={`${r.title} site photo ${i + 1}`} loading="lazy" referrerPolicy="no-referrer"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    </a>
+                  ))}
+                </div>
+                {r.images.length > 3 && (
+                  <a href={r.images[0]} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: '.35rem', fontSize: '.6rem', fontWeight: 700, color: 'var(--accent)' }}>
+                    View all {r.images.length} photos ↗
+                  </a>
+                )}
+              </div>
+            )}
+            {r.roadRefno && (
+              <p style={{ margin: '.55rem 0 0', fontSize: '.6rem', fontWeight: 700, color: st.color }}>
+                ━ {r.roadRefno} alignment highlighted on the map
+              </p>
+            )}
+            <p className="muted" style={{ fontSize: '.56rem', margin: '.55rem 0 0' }}>
+              Department of Roads blockage log via BIPAD; road lines from OpenStreetMap. Only closed and partially open roads are mapped; {roadBlocks.length - counts.roadblocks} reopened events are left off.
+            </p>
+          </div>
+        )
+      })()}
 
       {district && !muniSel && !stationSel && !hydroSel && !quakeSel && !riverSel && !rainSel && (() => {
         const d = districts.find(x => x.name === district)
@@ -2657,6 +3168,55 @@ export function NationalMap() {
                 </div>
               ))}
             </div>
+            {(() => {
+              const prof = districtId != null ? profiles[districtId] : undefined
+              const risk = districtId != null ? quakeRisk[districtId] : undefined
+              if (districtIds === null || (districtId != null && prof === undefined)) return <p className="muted" style={{ fontSize: '.62rem', margin: '.55rem 0 0' }}>Loading district profile…</p>
+              if (prof == null && !risk) return <p className="muted" style={{ fontSize: '.62rem', margin: '.55rem 0 0' }}>No NDRRMA profile matched this district.</p>
+              const peak = prof ? Math.max(1, ...prof.ageBands.map(b => Math.max(b.male, b.female))) : 1
+              return (
+                <div style={{ marginTop: '.75rem', paddingTop: '.7rem', borderTop: '1px solid var(--border-light)' }}>
+                  <p className="eyebrow" style={{ margin: '0 0 .45rem' }}>CENSUS PROFILE{prof?.censusYear ? ` · ${prof.censusYear}` : ''}</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.4rem' }}>
+                    {[
+                      ['Population', prof ? prof.population.toLocaleString('en-US') : '—', '#2563eb'],
+                      ['Households', prof ? prof.households.toLocaleString('en-US') : '—', '#0891b2'],
+                      ['Literate · 5+', prof?.literacy != null ? `${prof.literacy.toFixed(0)}%` : '—', '#16a34a'],
+                      ['Seismic risk', risk ? `${risk.riskScore.toFixed(1)} · #${risk.rank}` : '—', '#dc2626'],
+                    ].map(([label, val, c]) => (
+                      <div key={label as string} style={{ padding: '.45rem .6rem' }} className="bg-sunken rounded-[8px]">
+                        <span style={{ fontSize: '.52rem', letterSpacing: '.07em', textTransform: 'uppercase', fontWeight: 700 }} className="text-tertiary">{label}</span>
+                        <strong style={{ display: 'block', fontSize: '.95rem', marginTop: '.05rem', color: c as string }}>{val}</strong>
+                      </div>
+                    ))}
+                  </div>
+                  {prof && prof.ageBands.length > 0 && (
+                    <div style={{ marginTop: '.6rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.55rem', letterSpacing: '.07em', textTransform: 'uppercase', fontWeight: 700 }} className="text-tertiary">
+                        <span>‹ Male</span><span>Age band</span><span>Female ›</span>
+                      </div>
+                      <div style={{ marginTop: '.25rem', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        {prof.ageBands.map(b => (
+                          <div key={b.band} style={{ display: 'flex', alignItems: 'center', gap: '.3rem', fontSize: '.55rem' }}>
+                            <span style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+                              <span style={{ width: `${(b.male / peak) * 100}%`, height: 6, background: '#2563eb', borderRadius: '3px 0 0 3px', minWidth: b.male > 0 ? 1 : 0 }} />
+                            </span>
+                            <span className="text-tertiary" style={{ width: 34, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{b.band}</span>
+                            <span style={{ flex: 1 }}>
+                              <span style={{ width: `${(b.female / peak) * 100}%`, height: 6, display: 'block', background: '#db2777', borderRadius: '0 3px 3px 0', minWidth: b.female > 0 ? 1 : 0 }} />
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <p className="muted" style={{ fontSize: '.58rem', margin: '.55rem 0 0' }}>
+                    {prof ? `${prof.units} palika rows summed here — the API files census counts per palika, so this district total is computed, not published. ` : ''}
+                    Seismic risk score is NDRRMA&apos;s own per-district ranking.
+                  </p>
+                </div>
+              )
+            })()}
             <p className="muted" style={{ fontSize: '.62rem', margin: '.6rem 0 0' }}>Projects in scope are listed in the right panel.</p>
           </div>
         )
@@ -2683,7 +3243,7 @@ export function NationalMap() {
                 { key: 'quakesPast', color: '#b45309', label: 'Historic EQ' },
                 { key: 'incidents', color: '#7c3aed', label: 'Incidents' },
                 { key: 'weather', color: '#2563eb', label: 'Weather Stn' },
-                { key: 'roads', color: '#b45309', label: 'Highways' },
+                { key: 'roads', color: '#b45309', label: 'Roads' },
                 { key: 'parks', color: '#0f766e', label: 'Protected Areas' },
               ] as { key: keyof Layers; color: string; label: string }[]).map(({ key, color, label }, i) => (
                 <button key={`${key}-${i}`} onClick={() => toggle(key)} className="atlas-legend-dot"
@@ -2693,6 +3253,20 @@ export function NationalMap() {
                   {label}
                 </button>
               ))}
+              {layers.roads && (
+                <span className="atlas-hq-legend-item" style={{ gap: 6 }} title="Department of Roads blockage events carried by BIPAD. Only closed and partially open roads are drawn; reopened events are left off.">
+                  <span style={{ display: 'inline-flex', gap: 3 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: 99, background: '#dc2626' }} />
+                    <span style={{ width: 7, height: 7, borderRadius: 99, background: '#f59e0b' }} />
+                  </span>
+                  {counts.roadClosed} closed · {counts.roadPartial} partial
+                </span>
+              )}
+              {layers.roads && (
+                <span className="atlas-hq-legend-item" style={{ fontSize: '.52rem', opacity: 0.65 }} title="Road geometry: OpenStreetMap via OpenFreeMap vector tiles">
+                  Road lines © OpenStreetMap contributors · OpenFreeMap
+                </span>
+              )}
               {layers.rain && (
                 <span className="atlas-hq-legend-item" style={{ gap: 6 }} title="Rain-gauge heat field: daily accumulation, gauges reading in the last 48 h">
                   <span style={{ width: 46, height: 6, borderRadius: 99, background: RAIN_HEAT_GRADIENT }} />
@@ -2871,6 +3445,36 @@ export function NationalMap() {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', padding: '.9rem 1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {district && (() => {
+              const prof = districtId != null ? profiles[districtId] : undefined
+              const risk = districtId != null ? quakeRisk[districtId] : undefined
+              if (!prof && !risk) return null
+              return (
+                <div className="panel" style={{ padding: '.8rem', margin: 0 }}>
+                  <span style={{ fontSize: '.56rem', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }} className="text-tertiary">
+                    District profile{prof ? ` · census ${prof.censusYear}` : ''}
+                  </span>
+                  <div style={{ marginTop: '.5rem', display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+                    {[
+                      ['Population', prof ? prof.population.toLocaleString('en-US') : '—'],
+                      ['Households', prof ? prof.households.toLocaleString('en-US') : '—'],
+                      ['Literate (5+)', prof?.literacy != null ? `${prof.literacy.toFixed(0)}%` : '—'],
+                      ['Seismic risk score', risk ? `${risk.riskScore.toFixed(1)} (national rank ${risk.rank})` : '—'],
+                    ].map(([label, val]) => (
+                      <div key={label} style={{ display: 'flex', alignItems: 'baseline', gap: '.4rem', fontSize: '.68rem' }}>
+                        <span style={{ flex: 1 }} className="text-secondary">{label}</span>
+                        <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{val}</strong>
+                      </div>
+                    ))}
+                  </div>
+                  {prof && (
+                    <p className="muted" style={{ fontSize: '.58rem', margin: '.45rem 0 0' }}>
+                      {prof.units} palika rows summed here, Census {prof.censusYear} — computed, not published. NDRRMA seismic ranking.
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
             {/* Hydropower register summary */}
             <div className="panel" style={{ padding: '.8rem', margin: 0 }}>
               <span style={{ fontSize: '.56rem', letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 700 }} className="text-tertiary">Hydropower Licensed Capacity</span>

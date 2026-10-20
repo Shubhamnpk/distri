@@ -143,6 +143,10 @@ export type NepseStock = {
   close: number
   asset_type: string
   sector: string
+  /** Traded contracts for the session. */
+  trades?: number
+  /** Market capitalisation in NPR (absolute). */
+  marketCap?: number
   // raw API aliases (tolerated at runtime)
   percent_change?: number
   name?: string
@@ -151,10 +155,14 @@ export type NepseStock = {
 export type NepseCompanyProfile = {
   symbol: string
   profile: string
+  id?: number
   email?: string
   phone?: string
+  fax?: string
   contact_person?: string
   address?: string
+  address_type?: string
+  logo_path?: string
   status?: string
 }
 
@@ -174,6 +182,52 @@ export type NepseReport = {
 export type NepseCompanyFinancial = {
   symbol: string
   reports: NepseReport[]
+}
+
+export type NepseDividendRecord = {
+  symbol: string
+  bonus: number | null
+  cash: number | null
+  total: number | null
+  announce: string
+  bookclose: string | null
+  fiscalYear: string
+}
+
+export type NepseDisclosure = {
+  id: number
+  symbol?: string
+  title: string
+  body: string
+  source?: string
+  publishedAt: string
+  documentUrl?: string
+}
+
+export type NepseFloorSheetBroker = {
+  name: string
+  qty: number
+  amount: number
+  share: number
+}
+
+export type NepseFloorSheetTrade = {
+  time: string
+  qty: number
+  rate: number
+  amount: number
+  buyer: string
+  seller: string
+}
+
+export type NepseFloorSheetSummary = {
+  date: string
+  totalQty: number
+  totalAmount: number
+  contracts: number
+  buyers: NepseFloorSheetBroker[]
+  sellers: NepseFloorSheetBroker[]
+  largest: NepseFloorSheetTrade[]
 }
 
 export type NepseMarketSummary = {

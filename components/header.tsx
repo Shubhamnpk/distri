@@ -10,6 +10,7 @@ import { Logo } from '@/components/logo'
 const navItems = [
   { href: '/', label: 'Home' },
   { href: '/companies', label: 'Companies' },
+  { href: '/market', label: 'Market' },
   { href: '/projects', label: 'Projects' },
   { href: '/map', label: 'Map' },
   { href: '/procurement', label: 'Procurement' },

@@ -276,53 +276,6 @@ export default function CalendarPage() {
 
   return (
     <div className="content-wrap">
-      {/* ── Hero ── */}
-      <div className="eco-hero" style={{ background: 'linear-gradient(135deg, #312e81 0%, #1e1b4b 60%, #0f0d2e 100%)' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr .8fr', gap: '1.5rem', alignItems: 'center' }} className="cal-hero-grid">
-          <div>
-            <p style={{ fontSize: '.6rem', letterSpacing: '.16em', fontWeight: 700, opacity: .7, margin: 0 }}>BIKRAM SAMBAT · MARKET CALENDAR</p>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.8rem, 3.5vw, 2.8rem)', fontWeight: 500, letterSpacing: '-.04em', margin: '.3rem 0 .4rem', lineHeight: 1.05 }}>
-              Days that move money.
-            </h1>
-            <p style={{ fontSize: '.82rem', opacity: .85, margin: 0, maxWidth: 480, lineHeight: 1.6 }}>
-              Festivals, public holidays, fiscal turns and IPO windows - plotted on the Nepali month so nothing tradable sneaks past.
-            </p>
-            <div style={{ display: 'flex', gap: '.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
-              <span style={{ background: 'rgba(255,255,255,.14)', borderRadius: 20, padding: '.35rem .8rem', fontSize: '.68rem', fontWeight: 700 }}>
-                Today · {BS_MONTHS_EN[bsNow.m]} {bsNow.d}, {bsNow.y} BS
-              </span>
-              <span style={{ background: 'rgba(255,255,255,.14)', borderRadius: 20, padding: '.35rem .8rem', fontSize: '.68rem', fontWeight: 700 }}>
-                {upcoming.length} upcoming
-              </span>
-            </div>
-          </div>
-          <div style={{ background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.16)', borderRadius: 14, padding: '.9rem 1rem' }}>
-            <p style={{ margin: 0, fontSize: '.6rem', fontWeight: 700, letterSpacing: '.12em', opacity: .7 }}>UP NEXT</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '.45rem', marginTop: '.55rem' }}>
-              {upcoming.slice(0, 3).map(e => (
-                <button
-                  key={e.key}
-                  onClick={() => jumpToDate(e.start)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '.55rem', cursor: 'pointer', textAlign: 'left', padding: '.45rem .55rem', borderRadius: 10, background: 'rgba(255,255,255,.07)' }}
-                >
-                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: KIND[e.kind].dot, flexShrink: 0 }} />
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <strong style={{ display: 'block', fontSize: '.74rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.title}</strong>
-                    <span style={{ fontSize: '.62rem', opacity: .7 }}>
-                      {e.start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                      {e.days > 1 ? ` – ${e.end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}
-                    </span>
-                  </span>
-                </button>
-              ))}
-              {upcoming.length === 0 && (
-                <p style={{ margin: 0, fontSize: '.72rem', opacity: .7 }}>A quiet stretch - nothing on the books.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '.5rem', marginBottom: '.9rem' }}>
         <div style={{ display: 'flex', padding: 3 }} className="bg-card border border-line-light rounded-[20px]">
           {(['ad', 'bs'] as const).map(v => (

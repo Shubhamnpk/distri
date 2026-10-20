@@ -9,6 +9,7 @@ import { companies, projects, sources } from '@/lib/data'
 const exploreLinks = [
   { href: '/', label: 'Overview' },
   { href: '/companies', label: 'Companies' },
+  { href: '/market', label: 'Market' },
   { href: '/projects', label: 'Projects' },
   { href: '/map', label: 'National Map' },
   { href: '/procurement', label: 'Procurement' },

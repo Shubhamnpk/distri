@@ -2,6 +2,8 @@
 // https://bipadportal.gov.np/api/v1/ - ~150 resources. Verified live 2026-10-13.
 // Shape: { count, next, previous, results[] }. Supports ?limit=&offset=.
 
+import { canonDistrictKey, normName } from './district-geo'
+
 const BIPAD_BASE = 'https://bipadportal.gov.np/api/v1'
 
 const HEADERS = {
@@ -136,11 +138,19 @@ export type BipadLoss = {
   peopleDeathCount?: number
   peopleMissingCount?: number
   peopleInjuredCount?: number
+  peopleAffectedCount?: number
   familyAffectedCount?: number
   familyRelocatedCount?: number
+  familyEvacuatedCount?: number
   livestockDestroyedCount?: number
   infrastructureDestroyedCount?: number
   infrastructureDestroyedHouseCount?: number
+  infrastructureAffectedHouseCount?: number
+  infrastructureDestroyedRoadCount?: number
+  infrastructureDestroyedBridgeCount?: number
+  infrastructureDestroyedElectricityCount?: number
+  infrastructureEconomicLoss?: number
+  agricultureEconomicLoss?: number
   estimatedLoss?: number | null
   [key: string]: unknown
 }
@@ -170,6 +180,52 @@ export async function fetchBipadLossesByIds(ids: number[]): Promise<BipadLoss[]>
     for (const row of batch) if (row) out.push(row)
   }
   return out
+}
+
+/** Full incident record: the list endpoint's slim rows omit `titleNe`, `cause`,
+ *  `description`, `verificationMessage`, `wards[]` and `dataSource`. */
+export type BipadIncidentDetail = BipadIncident & {
+  titleNe?: string | null
+  description?: string | null
+  cause?: string | null
+  verificationMessage?: string | null
+  approved?: boolean
+  wards?: number[]
+  streetAddress?: string | null
+  dataSource?: string | null
+}
+
+export function fetchBipadIncidentDetail(id: number) {
+  return fetchBipadOne<BipadIncidentDetail>(`/incident/${id}/`)
+}
+
+/** Loss record joined from `incident.loss` (casualties, families, damage, NPR estimate). */
+export function fetchBipadLoss(id: number) {
+  return fetchBipadOne<BipadLoss>(`/loss/${id}/`)
+}
+
+export type BipadIncidentPlace = { municipality?: string; municipalityType?: string; ward?: string; district?: string }
+const placeCache = new Map<number, Promise<BipadIncidentPlace | null>>()
+
+/** `/incident/` rows carry ward ids, not names: ward → municipality → district. */
+export function fetchBipadIncidentPlace(wardId: number): Promise<BipadIncidentPlace | null> {
+  const cached = placeCache.get(wardId)
+  if (cached) return cached
+  const p = (async () => {
+    const ward = await fetchBipadOne<{ title?: string; municipality?: number }>(`/ward/${wardId}/`)
+    if (!ward?.municipality) return null
+    const muni = await fetchBipadOne<{ title?: string; type?: string; district?: number }>(`/municipality/${ward.municipality}/`)
+    if (!muni) return null
+    const dist = muni.district ? await fetchBipadOne<{ title?: string }>(`/district/${muni.district}/`) : null
+    return {
+      municipality: muni.title,
+      municipalityType: muni.type,
+      ward: ward.title,
+      district: dist?.title,
+    }
+  })().catch(() => null)
+  placeCache.set(wardId, p)
+  return p
 }
 
 export type BipadIncidentProfile = {
@@ -318,6 +374,177 @@ async function fetchBipadPages<T>(path: string, pages = 8, limit = 100): Promise
 /** National rainfall-gauge network (~660 stations) with coords + elevation. */
 export function fetchBipadRainStationsAll(): Promise<BipadStation[]> {
   return fetchBipadPages<BipadStation>('/rain-stations/')
+}
+
+export type BipadDemographicRow = {
+  id: number
+  totalPopulation?: number | null
+  malePopulation?: number | null
+  femalePopulation?: number | null
+  householdCount?: number | null
+  literacyRate?: number | null
+  totalAboveFiveYears?: number | null
+  totalLiterate?: number | null
+  censusYear?: string | null
+  federalLevel?: string | null
+  municipality?: number | null
+  ageGroupPopulation?: { male?: Record<string, number>; female?: Record<string, number> }
+  [key: string]: unknown
+}
+
+export type DistrictProfile = {
+  censusYear: string
+  /** Local units (palikas) summed into this profile. */
+  units: number
+  population: number
+  male: number
+  female: number
+  households: number
+  /** Share of the 5+ population that is literate, from summed totals (null when the API blanks them). */
+  literacy: number | null
+  ageBands: { band: string; male: number; female: number }[]
+}
+
+/** Census profile for one district, summed from its palika rows.
+ *  The API stores one row per palika PER census year (2011 + 2021) and silently ignores
+ *  `?censusYear=`, so we pick the newest year present and sum only those rows — mixing
+ *  years double-counts. Everything returned here is computed from the rows, not published. */
+export async function fetchBipadDistrictProfile(districtId: number): Promise<DistrictProfile | null> {
+  const { results } = await fetchBipad<BipadDemographicRow>('/demographic/', 100, `&district=${districtId}`)
+  if (!results.length) return null
+  const year = results.map(r => String(r.censusYear ?? '')).sort().at(-1) ?? ''
+  const rows = results.filter(r => String(r.censusYear ?? '') === year)
+  if (!rows.length) return null
+  const sum = (pick: (r: BipadDemographicRow) => number | null | undefined) =>
+    rows.reduce((s, r) => s + (pick(r) ?? 0), 0)
+  const above5 = sum(r => r.totalAboveFiveYears)
+  const literate = sum(r => r.totalLiterate)
+  const bands = Object.keys(rows[0].ageGroupPopulation?.male ?? {})
+    .map(band => ({
+      band,
+      male: sum(r => r.ageGroupPopulation?.male?.[band]),
+      female: sum(r => r.ageGroupPopulation?.female?.[band]),
+    }))
+    .sort((a, b) => a.band.localeCompare(b.band))
+  return {
+    censusYear: year,
+    units: rows.length,
+    population: sum(r => r.totalPopulation),
+    male: sum(r => r.malePopulation),
+    female: sum(r => r.femalePopulation),
+    households: sum(r => r.householdCount),
+    literacy: above5 > 0 ? (literate / above5) * 100 : null,
+    ageBands: bands,
+  }
+}
+
+export type PalikaCensus = {
+  id: number
+  title: string
+  censusYear: string
+  population: number
+  male: number
+  female: number
+  households: number
+  /** Share of the 5+ population that is literate (computed when the rate is blank). */
+  literacy: number | null
+  /** BIPAD's palika centroid — used when the boundary file spells the name differently. */
+  centroid?: [number, number]
+}
+
+/** Newest census row for every palika of one district. Rows are also keyed by
+ *  `normName(title)` for the common case; the caller falls back to the nearest
+ *  centroid when the boundary file uses an older or differently-spelled name.
+ *  `/demographic/` names the palika only by numeric id, so titles come from
+ *  `/municipality/?district=` and the two are joined on it. 2021 rows blank
+ *  `literacyRate`, so it is recomputed from `totalLiterate / totalAboveFiveYears`. */
+export async function fetchBipadPalikaCensus(districtId: number): Promise<{ year: string; rows: PalikaCensus[]; byName: Record<string, PalikaCensus> }> {
+  const [muni, dem] = await Promise.all([
+    fetchBipad<{ id: number; title: string; centroid?: { coordinates?: [number, number] } }>('/municipality/', 100, `&district=${districtId}`),
+    fetchBipad<BipadDemographicRow>('/demographic/', 100, `&district=${districtId}`),
+  ])
+  const meta = new Map(muni.results.map(m => [m.id, m]))
+  const year = dem.results.map(r => String(r.censusYear ?? '')).sort().at(-1) ?? ''
+  const rows: PalikaCensus[] = []
+  const byName: Record<string, PalikaCensus> = {}
+  for (const r of dem.results) {
+    if (String(r.censusYear ?? '') !== year || r.municipality == null) continue
+    const m = meta.get(r.municipality)
+    if (!m?.title) continue
+    const above5 = r.totalAboveFiveYears ?? 0
+    const literate = r.totalLiterate ?? 0
+    const row: PalikaCensus = {
+      id: r.municipality,
+      title: m.title,
+      censusYear: year,
+      population: r.totalPopulation ?? 0,
+      male: r.malePopulation ?? 0,
+      female: r.femalePopulation ?? 0,
+      households: r.householdCount ?? 0,
+      literacy: r.literacyRate ?? (above5 > 0 ? (literate / above5) * 100 : null),
+      centroid: m.centroid?.coordinates,
+    }
+    rows.push(row)
+    byName[normName(m.title)] = row
+  }
+  return { year, rows, byName }
+}
+
+export type BipadRoadBlock = {
+  id: number
+  title: string
+  roadRefno?: string | null
+  linkCode?: string | null
+  point?: { type: string; coordinates: [number, number] }
+  location?: string | null
+  division?: string | null
+  chainage?: string | null
+  endChainage?: string | null
+  /** Current state of this blockage event: OPEN / PARTIAL_OPEN / CLOSED. */
+  status?: string | null
+  closureReason?: string | null
+  repairEta?: string | null
+  effortsBeingMade?: string | null
+  remarks?: string | null
+  images?: string[]
+  dateRoadblockStart?: string | null
+  dateRoadblockEndEstimated?: string | null
+  /** Empty = no reopening recorded (still shut, or never reported). */
+  dateRoadblockEnd?: string | null
+  actualRepairTime?: string | null
+  contactPerson?: string | null
+  district?: number | null
+  province?: number | null
+  [key: string]: unknown
+}
+
+/** Department of Roads blockage log carried by BIPAD: one row per closure event on a
+ *  national highway — status, closure reason, ETA, efforts, photos, lat/lon.
+ *  ~405 rows (≈6 months of events, 29 highways), so pull the table in one request. */
+export async function fetchBipadRoadBlocks(limit = 500) {
+  const fields = 'id,title,road_refno,link_code,point,location,division,chainage,status,closure_reason,repair_eta,efforts_being_made,remarks,images,date_roadblock_start,date_roadblock_end,date_roadblock_end_estimated,actual_repair_time,contact_person,district'
+  return fetchBipad<BipadRoadBlock>('/highway/', limit, `&ordering=-id&fields=${fields}`)
+}
+
+export type BipadQuakeRisk = { district: number; riskScore: number; rank: number; hdiScore: number | null }
+
+/** Canonical district name → BIPAD district id (all 77 in one small request).
+ *  District ids elsewhere in the app can come from polygon files, whose synthetic
+ *  ids are NOT BIPAD ids — always join this API on the name. */
+export async function fetchBipadDistrictIds(): Promise<Record<string, number>> {
+  const { results } = await fetchBipad<{ id: number; title: string }>('/district/', 100, '&fields=id,title')
+  return Object.fromEntries(results.filter(r => r.title).map(r => [canonDistrictKey(r.title), Number(r.id)]))
+}
+
+/** Per-district seismic risk score (77 rows, one request). */
+export async function fetchBipadQuakeRisk() {
+  const { results } = await fetchBipad<{ district?: number; data?: Record<string, number> }>('/earthquake-riskscore/', 100)
+  return results.flatMap(r => {
+    const d = r.data ?? {}
+    return typeof r.district === 'number' && typeof d.riskScore === 'number'
+      ? [{ district: r.district, riskScore: d.riskScore, rank: d.rank ?? 0, hdiScore: d.hdiScore ?? null }]
+      : []
+  })
 }
 
 /** National river/water-level network (~280 stations) with live flood telemetry. */
