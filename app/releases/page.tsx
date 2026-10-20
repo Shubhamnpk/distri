@@ -33,8 +33,8 @@ type GithubRelease = {
   assets: GithubAsset[]
 }
 
-const rawRepository = process.env.NEXT_PUBLIC_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || ''
-const REPOSITORY = rawRepository.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').trim()
+const rawRepository = (process.env.NEXT_PUBLIC_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || 'Shubhamnpk/distri').trim()
+const REPOSITORY = rawRepository.replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '')
 const validRepository = /^[\w.-]+\/[\w.-]+$/.test(REPOSITORY) ? REPOSITORY : null
 
 async function getReleases(): Promise<{ releases: GithubRelease[]; failed: boolean }> {

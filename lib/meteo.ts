@@ -65,6 +65,43 @@ export async function fetchCurrentTemps(places: DistrictWeather[]): Promise<(num
   }
 }
 
+/** CAMS PM2.5 ships on a ~0.4° global grid, so that is the spacing we sample at; the
+ *  field is model output, not a measurement — it cannot resolve a valley or a city. */
+const PM25_GRID_STEP = 0.4
+/** Sampling lattice over Nepal's bounding box (26.2–30.4 N, 80.1–88.3 E) — 231 nodes. */
+export const NEPAL_PM25_GRID: DistrictWeather[] = (() => {
+  const pts: DistrictWeather[] = []
+  for (let lat = 26.2; lat <= 30.4 + 1e-9; lat += PM25_GRID_STEP) {
+    for (let lon = 80.1; lon <= 88.3 + 1e-9; lon += PM25_GRID_STEP) {
+      pts.push({ lat: Number(lat.toFixed(2)), lon: Number(lon.toFixed(2)) })
+    }
+  }
+  return pts
+})()
+
+/** Current model PM2.5 for many points in ONE request (array lat/lon params, air-quality
+ *  host). Returns values aligned with the input order; null where unavailable. */
+export async function fetchPm25Grid(places: DistrictWeather[]): Promise<(number | null)[]> {
+  if (!places.length) return []
+  try {
+    const lats = places.map(p => p.lat).join(',')
+    const lons = places.map(p => p.lon).join(',')
+    const res = await fetch(
+      `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lats}&longitude=${lons}&current=pm2_5`,
+      { headers: HEADERS, next: { revalidate: 3600 } },
+    )
+    if (!res.ok) return places.map(() => null)
+    const json = await res.json()
+    const arr = Array.isArray(json) ? json : [json]
+    return places.map((_, i) => {
+      const v = arr[i]?.current?.pm2_5
+      return typeof v === 'number' ? v : null
+    })
+  } catch {
+    return places.map(() => null)
+  }
+}
+
 /** 7-day model highs/lows for a point — honest fallback where DHM has gaps.
  *  Always label values from here as model estimates in the UI. */
 export async function fetchDailyHighLow(place: DistrictWeather): Promise<{ date: string; max: number | null; min: number | null }[]> {

@@ -18,7 +18,7 @@ import { matchDistricts } from '@/lib/geo'
 import { fetchBipadDistricts, fetchDistrictPolygons, fetchLocalDistricts, districtsFromPolygons, provinceBbox, normName, fetchLocalMunicipalities, canonDistrictKey, fetchLocalProtected, fetchProvinceShapes, type BipadDistrict, type LocalDistrict, type LocalMunicipality } from '@/lib/district-geo'
 import { fetchHydroProjects, hydroKind, HYDRO_KIND_COLOR, HYDRO_KIND_LABEL, type HydroProject, type HydroKind } from '@/lib/hydro'
 import { fetchNepalHighways, type RoadFeatureCollection } from '@/lib/roads'
-import { fetchNepalQuakes, fetchCurrentWeather, fetchCurrentPm25, fetchHourlyTemps, type NepalQuake, type CurrentWeather } from '@/lib/meteo'
+import { fetchNepalQuakes, fetchCurrentWeather, fetchCurrentPm25, fetchHourlyTemps, fetchPm25Grid, NEPAL_PM25_GRID, type NepalQuake, type CurrentWeather } from '@/lib/meteo'
 import { LineChart } from '@/components/charts'
 import { WeatherIcon } from '@/components/weather-icon'
 import { skyKind } from '@/lib/condition'
@@ -159,22 +159,421 @@ function riverIcon(s: BipadStation, active: boolean): L.DivIcon {
   })
 }
 
-/** Rain-gauge marker: small sky-blue drop. */
-function rainIcon(active: boolean): L.DivIcon {
-  const style = [
-    'width:15px', 'height:15px', 'display:grid', 'place-items:center', 'border-radius:50%',
-    'color:#fff', 'box-sizing:border-box', 'cursor:pointer', 'background:#0ea5e9', 'border:1.5px solid #fff',
-    active
-      ? 'transform:scale(1.4);box-shadow:0 0 0 3px rgba(14,165,233,.45),0 4px 12px rgba(0,0,0,.3)'
-      : 'box-shadow:0 1px 3px rgba(0,0,0,.25)',
-  ].join(';')
-  const drop = `<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2s6 7.3 6 11a6 6 0 0 1-12 0c0-3.7 6-11 6-11z"/></svg>`
-  return L.divIcon({
-    html: `<span class="rain-node${active ? ' active' : ''}" style="${style}">${drop}</span>`,
-    className: 'rain-node-wrap',
-    iconSize: [15, 15],
-    iconAnchor: [7.5, 7.5],
-  })
+/** Rainfall window the heat map shows, in hours. */
+const RAIN_HEAT_INTERVAL = 24
+/** Readings past this are sensor faults, not weather (Nepal's 24 h records sit well under it). */
+const RAIN_SANE_MM = 500
+/** A gauge whose last reading is older than this is stale - kept out of a "now" heat map. */
+const RAIN_FRESH_H = 48
+
+/** A gauge's 24 h rainfall, or null when its reading is missing, implausible or stale. */
+function rainReading(s: BipadStation): number | null {
+  const avgs = Array.isArray(s.averages) ? s.averages : []
+  const v = avgs.find(a => a?.interval === RAIN_HEAT_INTERVAL)?.value
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > RAIN_SANE_MM) return null
+  const at = s.measuredOn ? Date.parse(s.measuredOn) : NaN
+  if (Number.isNaN(at) || Date.now() - at > RAIN_FRESH_H * 3_600_000) return null
+  return v
+}
+
+/** Drizzle → cloudburst. Colour climbs with the accumulation; alpha climbs with it too. */
+const RAIN_RAMP: [number, [number, number, number]][] = [
+  [0.2, [56, 189, 248]],
+  [2, [34, 197, 94]],
+  [6, [250, 204, 21]],
+  [15, [249, 115, 22]],
+  [30, [239, 68, 68]],
+  [60, [190, 24, 93]],
+]
+
+/** The neutral band for a watched, rainless cell. Slate rather than near-white: the
+ *  basemap is already pale, so a light grey wash would be invisible on it. */
+const RAIN_NEUTRAL_RGB: [number, number, number] = [100, 116, 139]
+/** Ground no gauge reaches at all: barely tinted, so a real hole stays distinguishable
+ *  from "watched, and it did not rain". */
+const RAIN_VEIL_A = 0.05
+/** A watched-but-dry cell: a solid neutral cell, so the honeycomb reads across the dry
+ *  half of the country without claiming rain there. */
+const RAIN_DRY_A = 0.45
+/** A gauge tints its cell out to the next gauge, but never past this reach, so we never
+ *  paint rainfall over ground no gauge actually watches. Wide enough that the thin gauge
+ *  network up in the high mountains still falls inside someone's cell. */
+const RAIN_COVER_KM = 250
+/** Field resolution: one sample per N screen px, smoothed up to full size afterwards.
+ *  Small enough that the cell seams read as a honeycomb rather than a blur. */
+const RAIN_SAMPLE_PX = 6
+/** The canvas is oversized by this much on every side: panning inside the margin is free
+ *  (Leaflet drags the pane), and a redraw only happens on zoom or past the margin. */
+const RAIN_MARGIN_PX = 300
+/** Spatial-bucket size for the nearest-gauge search. Kept small and fixed: sizing it to
+ *  the gauge reach would put every gauge in the country in a sample's neighbourhood. */
+const RAIN_BUCKET_PX = 48
+
+function rainColor(mm: number): [number, number, number] {
+  let c = RAIN_RAMP[0][1]
+  for (const [at, rgb] of RAIN_RAMP) if (mm >= at) c = rgb
+  return c
+}
+
+const RAIN_HEAT_GRADIENT =
+  'linear-gradient(90deg, #38bdf8 0%, #22c55e 22%, #facc15 45%, #f97316 65%, #ef4444 82%, #be185d 100%)'
+
+/** PM2.5 bands are the WHO 24 h air-quality guidelines and interim targets (15, 25, 35,
+ *  50) with the guide value 5 at the clean end and the unhealthiest band on top. */
+const PM25_RAMP: [number, [number, number, number]][] = [
+  [5, [34, 197, 94]],
+  [15, [250, 204, 21]],
+  [25, [249, 115, 22]],
+  [35, [239, 68, 68]],
+  [50, [153, 27, 27]],
+  [75, [126, 34, 206]],
+]
+/** A grid node owns its cell out to `coverKm`, so this reaches the half-diagonal of the
+ *  ~0.4° sampling lattice - every point in Nepal still lands inside someone's cell. */
+const PM25_COVER_KM = 45
+
+function pm25Color(v: number): [number, number, number] {
+  let c = PM25_RAMP[0][1]
+  for (const [at, rgb] of PM25_RAMP) if (v >= at) c = rgb
+  return c
+}
+
+const PM25_HEAT_GRADIENT =
+  'linear-gradient(90deg, #22c55e 0%, #facc15 24%, #f97316 44%, #ef4444 62%, #991b1b 80%, #7e22ce 100%)'
+
+/** The shape the heat fields are clipped to: country, open province, or open district. */
+type RainBoundary = { type?: string; features?: { properties?: { id?: number }; geometry?: unknown }[] } | null
+
+type HeatSample = { id: number; lat: number; lon: number; v: number }
+/** Colour for one field sample: `null` means no sample was within reach of that pixel. */
+type HeatPaint = (v: number | null) => [number, number, number, number]
+
+/** A nearest-sample wash on a coarse canvas field, shared by every heat layer: each field
+ *  pixel takes the value of the nearest sample within `coverKm`, `paint` decides the RGBA,
+ *  and the whole raster is clipped to the focused boundary. Extracted from the rain layer
+ *  so a second indicator (PM2.5) gets the same pan/zoom/anchor behaviour for free. */
+function HeatFieldLayer({
+  paneName, zIndex, samples, boundary, coverKm, paint, onPick,
+  samplePx = RAIN_SAMPLE_PX, marginPx = RAIN_MARGIN_PX, bucketPx = RAIN_BUCKET_PX,
+}: {
+  paneName: string
+  zIndex: number
+  samples: HeatSample[]
+  boundary: RainBoundary
+  coverKm: number
+  paint: HeatPaint
+  onPick?: (id: number) => void
+  samplePx?: number
+  marginPx?: number
+  bucketPx?: number
+}) {
+  const map = useMap()
+  const points = useRef(samples)
+  points.current = samples
+  const edge = useRef(boundary)
+  edge.current = boundary
+  const pick = useRef(onPick)
+  pick.current = onPick
+  const paintRef = useRef(paint)
+  paintRef.current = paint
+  const drawRef = useRef<() => void>(() => {})
+  const fieldRef = useRef<{ canvas: HTMLCanvasElement; img: ImageData; w: number; h: number } | null>(null)
+  const clipRef = useRef<{ source: RainBoundary; path: Path2D; minX: number; minY: number; maxX: number; maxY: number } | null>(null)
+
+  useEffect(() => {
+    const pane = map.getPane(paneName) ?? map.createPane(paneName)
+    pane.style.zIndex = String(zIndex) // above the tiles, below the district/palika shapes
+    pane.style.pointerEvents = 'none'
+    const canvas = L.DomUtil.create('canvas', 'rain-heat leaflet-zoom-animated') as HTMLCanvasElement
+    pane.appendChild(canvas)
+    let raf = 0
+    // A zoom animation scales every zoom-aware layer through its own transform. Without
+    // this the wash would sit unscaled while the map zooms around it, then snap on zoomend.
+    let animating = false
+
+    /** Nepal's outline (the seven provinces joined) as a Path2D in scale-0 world pixels,
+     *  plus its bounding box so sampling can skip everything outside the country.
+     *  Leaflet projects the world linearly per zoom, so one build serves every zoom and
+     *  the ~142k boundary vertices are never reprojected while panning or zooming. */
+    const borderPath = (): { path: Path2D; minX: number; minY: number; maxX: number; maxY: number } | null => {
+      const src = edge.current
+      if (!src?.features?.length) return null
+      if (clipRef.current?.source === src) return clipRef.current
+      const path = new Path2D()
+      let minX = Infinity
+      let minY = Infinity
+      let maxX = -Infinity
+      let maxY = -Infinity
+      for (const f of src.features) {
+        const g = f.geometry as { type?: string; coordinates?: unknown } | undefined
+        const polys =
+          g?.type === 'Polygon' ? [g.coordinates as number[][][]]
+            : g?.type === 'MultiPolygon' ? (g.coordinates as number[][][][])
+              : []
+        for (const poly of polys) {
+          for (const ring of poly) {
+            for (let i = 0; i < ring.length; i++) {
+              const p = map.project([ring[i][1], ring[i][0]], 0)
+              if (i) path.lineTo(p.x, p.y)
+              else path.moveTo(p.x, p.y)
+              if (p.x < minX) minX = p.x
+              if (p.x > maxX) maxX = p.x
+              if (p.y < minY) minY = p.y
+              if (p.y > maxY) maxY = p.y
+            }
+            path.closePath()
+          }
+        }
+      }
+      const built = { path, minX, minY, maxX, maxY }
+      clipRef.current = { source: src, ...built }
+      return built
+    }
+
+    /** Where the canvas sits in layer px, so a pan is carried by Leaflet moving the map
+     *  pane instead of us resampling the country on every frame. */
+    const anchor = { x: NaN, y: NaN, z: NaN }
+
+    drawRef.current = () => {
+      const size = map.getSize()
+      const z = map.getZoom()
+      const tl = map.containerPointToLayerPoint([0, 0])
+      const m = marginPx
+      // Mid-animation the pane transform is carrying the canvas: resampling now would both
+      // fight the animation and cost a rebuild per frame. zoomend repaints.
+      if (animating) return
+      // Panning inside the margin needs no work at all: the pane drags the canvas along.
+      if (anchor.z === z && Math.abs(tl.x - anchor.x) <= m && Math.abs(tl.y - anchor.y) <= m) return
+      anchor.z = z
+      anchor.x = Math.round(tl.x)
+      anchor.y = Math.round(tl.y)
+      const origin = L.point(anchor.x - m, anchor.y - m) // canvas top-left, layer px
+      const cw = size.x + m * 2
+      const ch = size.y + m * 2
+      if (canvas.width !== cw || canvas.height !== ch) {
+        canvas.width = cw
+        canvas.height = ch
+        canvas.style.width = `${cw}px`
+        canvas.style.height = `${ch}px`
+      }
+      L.DomUtil.setPosition(canvas, origin)
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+
+      const scale = Math.pow(2, z)
+      const pixelOrigin = map.getPixelOrigin()
+      const bp = borderPath()
+      // Nepal's outline in canvas px: outside it nothing is ever shown, so nothing is
+      // sampled either (the canvas reaches a margin beyond the viewport, most of which is
+      // India and Tibet).
+      const cx0 = bp ? bp.minX * scale - (pixelOrigin.x + origin.x) : 0
+      const cy0 = bp ? bp.minY * scale - (pixelOrigin.y + origin.y) : 0
+      const cx1 = bp ? bp.maxX * scale - (pixelOrigin.x + origin.x) : cw
+      const cy1 = bp ? bp.maxY * scale - (pixelOrigin.y + origin.y) : ch
+
+      // Sample reach in screen px at this zoom (metres-per-pixel from the Web-Mercator scale).
+      const metersPerPx = (156543.03392 * Math.cos((map.getCenter().lat * Math.PI) / 180)) / Math.pow(2, z)
+      const coverPx = (coverKm * 1000) / metersPerPx
+
+      // Project the samples into canvas-local px, keeping only those a cell could reach.
+      const cells: { x: number; y: number; v: number }[] = []
+      for (const g of points.current) {
+        const p = map.latLngToLayerPoint([g.lat, g.lon])
+        const x = p.x - origin.x
+        const y = p.y - origin.y
+        if (x < -coverPx || y < -coverPx || x > cw + coverPx || y > ch + coverPx) continue
+        cells.push({ x, y, v: g.v })
+      }
+
+      const step = samplePx
+      const w = Math.max(1, Math.ceil(cw / step))
+      const h = Math.max(1, Math.ceil(ch / step))
+      let field = fieldRef.current
+      if (!field || field.w !== w || field.h !== h) {
+        const fc = document.createElement('canvas')
+        fc.width = w
+        fc.height = h
+        field = { canvas: fc, img: new ImageData(w, h), w, h }
+        fieldRef.current = field
+      }
+      const { data } = field.img
+
+      // Bucket the samples on a fixed, small cell so the common case tests a handful of
+      // candidates instead of every sample in the country; the rare far-from-anyone sample
+      // falls back to a full scan, which is what keeps remote valleys filled.
+      const b = Math.max(step, Math.min(coverPx, bucketPx))
+      const cols = Math.ceil(cw / b) + 1
+      const rows = Math.ceil(ch / b) + 1
+      const buckets: (number[] | undefined)[] = new Array(cols * rows)
+      const clampX = (i: number) => Math.min(cols - 1, Math.max(0, i))
+      const clampY = (i: number) => Math.min(rows - 1, Math.max(0, i))
+      for (let i = 0; i < cells.length; i++) {
+        const k = clampY(Math.floor(cells[i].y / b)) * cols + clampX(Math.floor(cells[i].x / b))
+        if (buckets[k]) buckets[k]!.push(i)
+        else buckets[k] = [i]
+      }
+
+      const cover2 = coverPx * coverPx
+      data.fill(0) // transparent everywhere; only Nepal's box is sampled below
+      const gx0 = Math.max(0, Math.floor(cx0 / step))
+      const gx1 = Math.min(w, Math.ceil(cx1 / step) + 1)
+      const gy0 = Math.max(0, Math.floor(cy0 / step))
+      const gy1 = Math.min(h, Math.ceil(cy1 / step) + 1)
+      for (let gy = gy0; gy < gy1; gy++) {
+        const py = gy * step + step * 0.5
+        const cy = clampY(Math.floor(py / b))
+        for (let gx = gx0; gx < gx1; gx++) {
+          const px = gx * step + step * 0.5
+          const cx = clampX(Math.floor(px / b))
+          let v = NaN
+          let best = cover2
+          for (let oy = -1; oy <= 1; oy++) {
+            const ny = cy + oy
+            if (ny < 0 || ny >= rows) continue
+            for (let ox = -1; ox <= 1; ox++) {
+              const nx = cx + ox
+              if (nx < 0 || nx >= cols) continue
+              const bucket = buckets[ny * cols + nx]
+              if (!bucket) continue
+              for (const i of bucket) {
+                const c = cells[i]
+                const dx = c.x - px
+                const dy = c.y - py
+                const d2 = dx * dx + dy * dy
+                if (d2 < best) { best = d2; v = c.v }
+              }
+            }
+          }
+          if (Number.isNaN(v)) {
+            // Nothing within a bucket's reach: find the truly nearest sample.
+            for (const c of cells) {
+              const dx = c.x - px
+              const dy = c.y - py
+              const d2 = dx * dx + dy * dy
+              if (d2 < best) { best = d2; v = c.v }
+            }
+          }
+          const o = (gy * w + gx) * 4
+          const [R, G, B, A] = paintRef.current(Number.isNaN(v) ? null : v)
+          data[o] = R
+          data[o + 1] = G
+          data[o + 2] = B
+          data[o + 3] = Math.round(255 * Math.min(1, Math.max(0, A)))
+        }
+      }
+
+      const fctx = field.canvas.getContext('2d')
+      if (!fctx) return
+      fctx.putImageData(field.img, 0, 0)
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.clearRect(0, 0, cw, ch)
+
+      // Clip to Nepal: the scale-0 world path mapped into canvas px, then the field painted
+      // in the same space, so the wash covers the country and stops dead at the border.
+      ctx.save()
+      if (bp) {
+        ctx.setTransform(scale, 0, 0, scale, -(pixelOrigin.x + origin.x), -(pixelOrigin.y + origin.y))
+        ctx.clip(bp.path)
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(field.canvas, 0, 0, w, h, 0, 0, cw, ch)
+      ctx.restore()
+    }
+    const schedule = () => {
+      if (raf) return
+      raf = requestAnimationFrame(() => { raf = 0; drawRef.current() })
+    }
+    /** Ride the zoom animation: move the canvas to where its anchor lands at the target
+     *  zoom and scale it, exactly like the tile layers do. */
+    const onZoomAnim = (e: L.ZoomAnimEvent) => {
+      if (!Number.isFinite(anchor.x)) return
+      animating = true
+      const corner = map.layerPointToLatLng(L.point(anchor.x - marginPx, anchor.y - marginPx))
+      const viewHalf = map.getSize().divideBy(2)
+      const panePos = L.DomUtil.getPosition(map.getPane('mapPane') as HTMLElement) ?? L.point(0, 0)
+      const newTopLeft = map.project(e.center, e.zoom).subtract(viewHalf).add(panePos)
+      L.DomUtil.setTransform(canvas, map.project(corner, e.zoom).subtract(newTopLeft), map.getZoomScale(e.zoom))
+    }
+    const onZoomEnd = () => { animating = false }
+    drawRef.current()
+    map.on('move zoom viewreset resize', schedule)
+    map.on('zoomanim', onZoomAnim)
+    map.on('zoomend', onZoomEnd)
+    return () => {
+      map.off('move zoom viewreset resize', schedule)
+      map.off('zoomanim', onZoomAnim)
+      map.off('zoomend', onZoomEnd)
+      if (raf) cancelAnimationFrame(raf)
+      canvas.remove()
+    }
+  }, [map])
+
+  useEffect(() => { drawRef.current() }, [samples])
+  // Boundaries arrive async: repaint once Nepal's outline is there to clip against.
+  useEffect(() => { drawRef.current() }, [boundary])
+
+  useEffect(() => {
+    const handler = (e: L.LeafletMouseEvent) => {
+      if (!pick.current) return
+      let best: { id: number; d: number } | null = null
+      for (const g of points.current) {
+        const p = map.latLngToContainerPoint([g.lat, g.lon])
+        const d = Math.hypot(p.x - e.containerPoint.x, p.y - e.containerPoint.y)
+        if (d <= 20 && (!best || d < best.d)) best = { id: g.id, d }
+      }
+      if (best && pick.current) pick.current(best.id)
+    }
+    map.on('click', handler)
+    return () => { map.off('click', handler) }
+  }, [map])
+
+  return null
+}
+
+/** Rain-gauge 24 h totals on the shared heat field: honeycomb cells (nearest gauge wins),
+ *  grey where a gauge reports dry, and a bare veil where no gauge reaches at all. */
+function RainHeatLayer({ gauges, boundary, onPick }: { gauges: { id: number; lat: number; lon: number; mm: number }[]; boundary: RainBoundary; onPick: (id: number) => void }) {
+  const samples = useMemo(() => gauges.map(g => ({ id: g.id, lat: g.lat, lon: g.lon, v: g.mm })), [gauges])
+  const paint = useCallback<HeatPaint>((v) => {
+    if (v == null) return [...RAIN_NEUTRAL_RGB, RAIN_VEIL_A]
+    if (v <= 0) return [...RAIN_NEUTRAL_RGB, RAIN_DRY_A]
+    const t = Math.min(1, Math.log1p(v) / Math.log1p(60))
+    const [R, G, B] = rainColor(v)
+    return [R, G, B, Math.min(1, RAIN_VEIL_A + 0.55 + 0.4 * t)]
+  }, [])
+  return (
+    <HeatFieldLayer
+      paneName="rainheat"
+      zIndex={350}
+      samples={samples}
+      boundary={boundary}
+      coverKm={RAIN_COVER_KM}
+      paint={paint}
+      onPick={onPick}
+    />
+  )
+}
+
+/** Model PM2.5 on the shared heat field, sampled at CAMS' own ~0.4° grid spacing. */
+function Pm25HeatLayer({ nodes, boundary }: { nodes: HeatSample[]; boundary: RainBoundary }) {
+  const paint = useCallback<HeatPaint>((v) => {
+    if (v == null) return [0, 0, 0, 0]
+    const t = Math.min(1, v / 75)
+    const [R, G, B] = pm25Color(v)
+    return [R, G, B, 0.32 + 0.28 * t]
+  }, [])
+  return (
+    <HeatFieldLayer
+      paneName="pmheat"
+      zIndex={345}
+      samples={nodes}
+      boundary={boundary}
+      coverKm={PM25_COVER_KM}
+      paint={paint}
+    />
+  )
 }
 
 /** A rain gauge / river station usable on the map. */
@@ -338,7 +737,7 @@ function headquartersIcon(level: 'country' | 'province' | 'district') {
   })
 }
 
-type Layers = { projects: boolean; hydro: boolean; quakes: boolean; quakesPast: boolean; weather: boolean; incidents: boolean; parks: boolean; roads: boolean; rain: boolean; rivers: boolean }
+type Layers = { projects: boolean; hydro: boolean; quakes: boolean; quakesPast: boolean; weather: boolean; incidents: boolean; parks: boolean; roads: boolean; rain: boolean; pm25: boolean; rivers: boolean; capitals: boolean }
 
 function pointInRing(lng: number, lat: number, ring: number[][]): boolean {
   let inside = false
@@ -496,7 +895,7 @@ function MapDeselect({ onEmptyClick }: { onEmptyClick: () => void }) {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-function makeProvinceEach(selectProvince: (p: string) => void, selected: string | null) {
+function makeProvinceEach(selectProvince: (p: string) => void, selected: string | null, quiet = false) {
   return (f: any, l: any) => {
     const props: { id?: number; name?: string } = f?.properties ?? {}
     const label: string = props.name ?? ''
@@ -510,8 +909,11 @@ function makeProvinceEach(selectProvince: (p: string) => void, selected: string 
         color: isActive ? '#0b4f3e' : '#94a3b8',
       }
     }
-    l.bindTooltip(label, { sticky: true, direction: 'top' })
     l.on('click', () => { if (target) selectProvince(target) })
+    // With the rain wash on, hovering must not restyle the outline out from under the
+    // readings, so the layer stays quiet: click still drills into the province.
+    if (quiet) return
+    l.bindTooltip(label, { sticky: true, direction: 'top' })
     l.on('mouseover', () => l.setStyle({ weight: 2.6, fillOpacity: 0, color: '#0b4f3e' }))
     l.on('mouseout', () => l.setStyle(base()))
   }
@@ -532,10 +934,10 @@ function districtStyle(f: any, district: string | null) {
   }
 }
 
-function makeDistrictEach(setDistrict: (fn: (cur: string | null) => string | null) => void) {
+function makeDistrictEach(setDistrict: (fn: (cur: string | null) => string | null) => void, quiet = false) {
   return (f: any, l: any) => {
     const name: string = f?.properties?._district ?? f?.properties?.name ?? ''
-    l.bindTooltip(name, { sticky: true, direction: 'top' })
+    if (!quiet) l.bindTooltip(name, { sticky: true, direction: 'top' })
     l.on('click', () => setDistrict(cur => (cur === name ? null : name)))
   }
 }
@@ -573,6 +975,7 @@ export function NationalMap() {
   const [hydro, setHydro] = useState<HydroProject[]>([])
   const [roads, setRoads] = useState<RoadFeatureCollection | null>(null)
   const [rainStations, setRainStations] = useState<BipadStation[]>([])
+  const [pm25Nodes, setPm25Nodes] = useState<(number | null)[] | null>(null)
   const [riverStations, setRiverStations] = useState<BipadStation[]>([])
   const [quakes, setQuakes] = useState<NepalQuake[]>([])
   const [stations, setStations] = useState<DhmStation[]>([])
@@ -597,7 +1000,8 @@ export function NationalMap() {
   const [parks, setParks] = useState<LocalMunicipality[]>([])
   const [allParks, setAllParks] = useState<LocalMunicipality[]>([])
   const [munisLoading, setMunisLoading] = useState(false)
-  const [layers, setLayers] = useState<Layers>({ projects: true, hydro: true, quakes: false, quakesPast: false, weather: false, incidents: false, parks: true, roads: false, rain: false, rivers: false })
+  // The map opens quiet: only the live weather stations and the civic capital markers.
+  const [layers, setLayers] = useState<Layers>({ projects: false, hydro: false, quakes: false, quakesPast: false, weather: true, incidents: false, parks: false, roads: false, rain: false, pm25: false, rivers: false, capitals: true })
   const [parkSel, setParkSel] = useState<LocalMunicipality | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
@@ -719,6 +1123,8 @@ export function NationalMap() {
     fetchNepalHighways().then(r => { if (!cancelled) setRoads(r) }).catch(() => {})
     fetchBipadRainStationsAll().then(s => { if (!cancelled) setRainStations(s) }).catch(() => {})
     fetchBipadRiverStationsAll().then(s => { if (!cancelled) setRiverStations(s) }).catch(() => {})
+    // The PM2.5 field is ~230 model nodes in one request, like the rain gauges.
+    fetchPm25Grid(NEPAL_PM25_GRID).then(n => { if (!cancelled) setPm25Nodes(n) }).catch(() => {})
     fetchNepalQuakes(100).then(q => { if (!cancelled) setQuakes(q) }).catch(() => {})
     fetchDhmForecast().then(f => {
       if (cancelled) return
@@ -732,11 +1138,16 @@ export function NationalMap() {
         })),
       })))
     }).catch(() => {})
-    fetchBipadIncidents(200).then(i => { if (!cancelled) setIncidents(i.results) }).catch(() => {})
+    fetchBipadIncidents(1000, 'id,title,point,hazard,incident_on,source,verified,loss').then(i => { if (!cancelled) setIncidents(i.results) }).catch(() => {})
     // Load protected areas for ALL provinces upfront so parks show nation-wide
     const PROVINCES_ALL = ['Koshi', 'Madhesh', 'Bagmati', 'Gandaki', 'Lumbini', 'Karnali', 'Sudurpashchim']
     Promise.all(PROVINCES_ALL.map(p => fetchLocalProtected(p)))
-      .then(results => { if (!cancelled) setAllParks(results.flat()) })
+      .then(results => {
+        if (cancelled) return
+        // A protected area can be listed under every province it touches
+        // (Koshi Tappu sits in Koshi + Madhesh) - keep one row per name.
+        setAllParks([...new Map(results.flat().map(m => [m.name, m])).values()])
+      })
       .catch(() => {})
     return () => { cancelled = true }
   }, [])
@@ -945,8 +1356,50 @@ export function NationalMap() {
     return t
   }, [hydro])
 
-  const visibleRain = rainStations.filter(s => { const c = stationCoord(s); return c ? inScope(c[0], c[1]) : false })
   const visibleRivers = riverStations.filter(s => { const c = stationCoord(s); return c ? inScope(c[0], c[1]) : false })
+  // Heat inputs: in-scope rain gauges carrying a fresh, plausible 24 h reading. A clear
+  // day keeps every mm at 0, so the field simply stays empty instead of drawing zeros.
+  const rainHeat = useMemo(
+    () =>
+      rainStations.flatMap(s => {
+        const c = stationCoord(s)
+        if (!c || !inScope(c[0], c[1])) return []
+        const mm = rainReading(s)
+        return mm != null
+          ? [{ id: s.id, lat: c[0], lon: c[1], mm, name: s.title, area: stationArea(districts, s) }]
+          : []
+      }),
+    [rainStations, districts, province, district],
+  )
+  // The wash is limited to whatever the map is focused on: the whole country, the open
+  // province, or the open district - never across the level above it.
+  const rainClip = useMemo((): RainBoundary => {
+    if (district) {
+      const key = normName(district)
+      const f = polyByName[key] ?? (NAME_ALIAS[key] ? polyByName[NAME_ALIAS[key]] : undefined)
+      if (f) return { type: 'FeatureCollection', features: [f] }
+    }
+    if (province) {
+      const geo = provinceGeo as { features?: { properties?: { id?: number } }[] } | null
+      const f = geo?.features?.find(x => x.properties?.id != null && PROVINCE_ID_TO_NAME[x.properties.id] === province)
+      if (f) return { type: 'FeatureCollection', features: [f] }
+    }
+    return provinceGeo as RainBoundary
+  }, [district, province, provinceGeo, polyByName])
+
+  // PM2.5 nodes: the model lattice carries no scope filter - the clip decides what shows,
+  // and keeping every node means a focused district still fills to its edges.
+  const pm25Heat = useMemo(
+    () =>
+      (pm25Nodes ?? []).flatMap((v, i) => {
+        const p = NEPAL_PM25_GRID[i]
+        return typeof v === 'number' && p ? [{ id: i, lat: p.lat, lon: p.lon, v }] : []
+      }),
+    [pm25Nodes],
+  )
+
+  // Every gauge carries its number - tiny at national zoom, legible as you zoom in.
+  const rainZoom = zoomLevel >= 10 ? 'hi' : zoomLevel >= 8 ? 'md' : 'lo'
   const visibleQuakes = quakes.filter(q => inScope(q.coordinates[1], q.coordinates[0]))
   const yearQuakes = visibleQuakes.filter(q => q.time >= BS2083_START && q.time < BS2083_END)
   const pastQuakes = visibleQuakes.filter(q => !(q.time >= BS2083_START && q.time < BS2083_END))
@@ -1042,11 +1495,24 @@ export function NationalMap() {
     weather: visibleStations.length,
     incidents: visibleIncidents.length,
     roads: roads?.features.length ?? 0,
-    rain: visibleRain.length,
+    rain: rainHeat.filter(g => g.mm > 0).length,
+    pm25: pm25Heat.filter(p => p.v > 25).length,
     rivers: visibleRivers.length,
+    capitals: (!province || province === 'Bagmati' ? 1 : 0)
+      + Object.keys(PROVINCE_CAPITALS).filter(p => !province || p === province).length
+      + districtHeadquarters.length,
   }
 
-  const toggle = (k: keyof Layers) => setLayers(l => ({ ...l, [k]: !l[k] }))
+  // Rain and PM2.5 are both whole-country washes, so only one can be on at a time:
+  // switching either on switches the other off rather than stacking two quantities.
+  const toggle = (k: keyof Layers) => setLayers(l => {
+    if (k === 'rain') return { ...l, rain: !l.rain, pm25: l.rain ? l.pm25 : false }
+    if (k === 'pm25') return { ...l, pm25: !l.pm25, rain: l.pm25 ? l.rain : false }
+    return { ...l, [k]: !l[k] }
+  })
+
+  /** A heat wash is up: outlines go quiet so hovering cannot restyle over the field. */
+  const washOn = layers.rain || layers.pm25
 
   const handleSelectProject = (pt: (typeof projectPoints)[0]) => {
     if (!layers.projects) setLayers(l => ({ ...l, projects: true }))
@@ -1163,7 +1629,7 @@ export function NationalMap() {
           )}
           {provinceGeo && (
             <GeoJSON
-              key={`provinces-${province ?? 'all'}`}
+              key={`provinces-${province ?? 'all'}-${washOn}`}
               pane="shapes"
               data={provinceGeo as any}
               style={(f: any) => {
@@ -1177,16 +1643,16 @@ export function NationalMap() {
                   opacity: 1,
                 }
               }}
-              onEachFeature={makeProvinceEach(selectProvince, province) as any}
+              onEachFeature={makeProvinceEach(selectProvince, province, washOn) as any}
             />
           )}
           {province && districtFeatures.features.length > 0 && (
             <GeoJSON
-              key={`districts-${province}`}
+              key={`districts-${province}-${washOn}`}
               pane="borders"
               data={districtFeatures as any}
               style={(f: any) => districtStyle(f, district)}
-              onEachFeature={makeDistrictEach(setDistrict) as any}
+              onEachFeature={makeDistrictEach(setDistrict, washOn) as any}
             />
           )}
           {district && muniFeatures.features.length > 0 && (
@@ -1221,19 +1687,19 @@ export function NationalMap() {
               }}
             />
           )}
-          {(!province || province === 'Bagmati') && (
+          {layers.capitals && (!province || province === 'Bagmati') && (
             <Marker position={[COUNTRY_CAPITAL.lat, COUNTRY_CAPITAL.lng]} icon={headquartersIcon('country')} pane="points">
               <Tooltip direction="top" offset={[0, -9]}>{`National capital · ${COUNTRY_CAPITAL.name}`}</Tooltip>
             </Marker>
           )}
-          {Object.entries(PROVINCE_CAPITALS)
+          {layers.capitals && Object.entries(PROVINCE_CAPITALS)
             .filter(([capitalProvince]) => !province || capitalProvince === province)
             .map(([capitalProvince, capital]) => (
               <Marker key={`province-hq-${capitalProvince}`} position={[capital.lat, capital.lng]} icon={headquartersIcon('province')} pane="points">
                 <Tooltip direction="top" offset={[0, -9]}>{`${capitalProvince} provincial capital · ${capital.name}`}</Tooltip>
               </Marker>
             ))}
-          {districtHeadquarters.map(hq => (
+          {layers.capitals && districtHeadquarters.map(hq => (
             <Marker
               key={`district-hq-${hq.district}`}
               position={[hq.lat, hq.lng]}
@@ -1349,17 +1815,30 @@ export function NationalMap() {
               <Tooltip direction="top" offset={[0, -6]}>{i.title}</Tooltip>
             </CircleMarker>
           ))}
-          {layers.rain && visibleRain.map(s => {
-            const c = stationCoord(s)!
+          {layers.rain && (
+            <RainHeatLayer
+              gauges={rainHeat}
+              boundary={rainClip}
+              onPick={id => setRainSel(cur => (cur?.id === id ? null : rainStations.find(s => s.id === id) ?? null))}
+            />
+          )}
+          {layers.pm25 && <Pm25HeatLayer nodes={pm25Heat} boundary={rainClip} />}
+          {layers.rain && rainHeat.map(g => {
+            const wet = g.mm > 0
+            const [R, G, B] = rainColor(g.mm)
             return (
               <Marker
-                key={`rn-${s.id}`}
+                key={`rm-${g.id}`}
                 pane="points"
-                position={c}
-                icon={rainIcon(rainSel?.id === s.id)}
-                eventHandlers={{ click: () => setRainSel(cur => (cur?.id === s.id ? null : s)) }}
+                position={[g.lat, g.lon]}
+                icon={L.divIcon({
+                  html: `<span class="rain-mm${wet ? '' : ' dry'}${rainSel?.id === g.id ? ' active' : ''}" style="--rc:rgb(${R},${G},${B})">${wet ? (g.mm < 10 ? g.mm.toFixed(1) : Math.round(g.mm)) : '0'}</span>`,
+                  className: `rain-mm-wrap ${rainZoom}`,
+                  iconAnchor: [0, 0],
+                })}
+                eventHandlers={{ click: () => setRainSel(cur => (cur?.id === g.id ? null : rainStations.find(s => s.id === g.id) ?? null)) }}
               >
-                <Tooltip direction="top" offset={[0, -8]}>{s.title}{s.elevation != null ? ` · ${s.elevation} m` : ''}</Tooltip>
+                <Tooltip direction="top" offset={[0, -4]}>{g.name}{g.area ? ` · ${g.area}` : ''} — {g.mm.toFixed(1)} mm / 24 h</Tooltip>
               </Marker>
             )
           })}
@@ -1691,11 +2170,13 @@ export function NationalMap() {
             { key: 'quakes', label: 'Tremors', color: '#f59e0b', count: counts.quakes },
             { key: 'quakesPast', label: 'History', color: '#b45309', count: counts.quakesPast },
             { key: 'incidents', label: 'Incidents', color: '#7c3aed', count: counts.incidents },
-            { key: 'rain', label: 'Rain', color: '#0ea5e9', count: counts.rain },
+            { key: 'rain', label: 'Rain 24 h', color: '#0ea5e9', count: counts.rain },
+            { key: 'pm25', label: 'Air PM2.5', color: '#7e22ce', count: counts.pm25 },
             { key: 'rivers', label: 'Rivers', color: '#dc2626', count: counts.rivers },
             { key: 'weather', label: 'Weather', color: '#2563eb', count: counts.weather },
             { key: 'roads', label: 'Highways', color: '#b45309', count: counts.roads },
             { key: 'parks', label: 'Protected', color: '#0f766e', count: displayParks.length },
+            { key: 'capitals', label: 'Capitals', color: '#475569', count: counts.capitals },
           ] as { key: keyof Layers; label: string; color: string; count: number }[]).map(({ key, label, color, count }) => {
             const active = layers[key]
             return (
@@ -2195,7 +2676,8 @@ export function NationalMap() {
                 { key: 'hydro', color: '#16a34a', label: 'Hydro Op.' },
                 { key: 'hydro', color: '#2563eb', label: 'Hydro Gen.' },
                 { key: 'hydro', color: '#d97706', label: 'Hydro Surv.' },
-                { key: 'rain', color: '#0ea5e9', label: 'Rain Gauge' },
+                { key: 'rain', color: '#0ea5e9', label: 'Rain 24 h' },
+                { key: 'pm25', color: '#7e22ce', label: 'Air PM2.5' },
                 { key: 'rivers', color: '#dc2626', label: 'River Level' },
                 { key: 'quakes', color: '#f59e0b', label: 'Tremors' },
                 { key: 'quakesPast', color: '#b45309', label: 'Historic EQ' },
@@ -2207,10 +2689,22 @@ export function NationalMap() {
                 <button key={`${key}-${i}`} onClick={() => toggle(key)} className="atlas-legend-dot"
                   style={{ opacity: layers[key] ? 1 : 0.45, border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', fontWeight: 700, fontSize: '.63rem' }}
                   title={`${label} - click to ${layers[key] ? 'hide' : 'show'}`}>
-                  <span style={{ width: 8, height: 8, borderRadius: key === 'roads' ? 2 : '50%', background: color, flexShrink: 0 }} />
+                  <span style={{ width: key === 'rain' || key === 'pm25' ? 22 : 8, height: 8, borderRadius: key === 'roads' ? 2 : key === 'rain' ? 99 : '50%', background: key === 'rain' ? RAIN_HEAT_GRADIENT : key === 'pm25' ? PM25_HEAT_GRADIENT : color, flexShrink: 0 }} />
                   {label}
                 </button>
               ))}
+              {layers.rain && (
+                <span className="atlas-hq-legend-item" style={{ gap: 6 }} title="Rain-gauge heat field: daily accumulation, gauges reading in the last 48 h">
+                  <span style={{ width: 46, height: 6, borderRadius: 99, background: RAIN_HEAT_GRADIENT }} />
+                  0 → 60+ mm / 24 h · grey tick = dry
+                </span>
+              )}
+              {layers.pm25 && (
+                <span className="atlas-hq-legend-item" style={{ gap: 6 }} title="CAMS model PM2.5 on its native ~0.4° grid — a regional picture, not a street-level reading. It cannot resolve valleys, so Kathmandu's real PM2.5 runs far higher than the model shows.">
+                  <span style={{ width: 46, height: 6, borderRadius: 99, background: PM25_HEAT_GRADIENT }} />
+                  5 → 75+ µg/m³ · WHO bands · ~0.4° model grid, valleys not resolved
+                </span>
+              )}
               {[
                 { level: 'country', label: 'National capital' },
                 { level: 'province', label: 'Province capital' },

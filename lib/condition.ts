@@ -16,6 +16,19 @@ export function skyKind(name: string | undefined | null): SkyKind {
   return 'partly'
 }
 
+// Air quality from PM2.5 (µg/m³) on the US EPA bands - drives the severity cue beside the sky icon.
+export type Pm25Band = { label: string; cls: 'status-good' | 'status-warn' | 'status-bad' }
+
+export function pm25Band(v: number | null | undefined): Pm25Band | null {
+  if (v == null || Number.isNaN(v)) return null
+  if (v <= 12) return { label: 'Good', cls: 'status-good' }
+  if (v <= 35.4) return { label: 'Moderate', cls: 'status-good' }
+  if (v <= 55.4) return { label: 'Sensitive', cls: 'status-warn' }
+  if (v <= 150.4) return { label: 'Unhealthy', cls: 'status-warn' }
+  if (v <= 250.4) return { label: 'Very unhealthy', cls: 'status-bad' }
+  return { label: 'Hazardous', cls: 'status-bad' }
+}
+
 export const SKY_META: Record<SkyKind, { label: string; tint: string; bg: string }> = {
   clear: { label: 'Clear sky', tint: '#ea580c', bg: '#ffedd5' },
   partly: { label: 'Partly cloudy', tint: '#d97706', bg: '#fef3c7' },

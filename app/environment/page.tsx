@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowUpRight, Droplets, Flame, TriangleAlert, Activity, MapPin, Wind } from 'lucide-react'
 import { fetchDhmForecast, fetchDhmObservations, type DhmWeather, type DhmObservations, type DhmStationForecast } from '@/lib/dhm'
 import { fetchBipadIncidents, fetchBipadAlerts, type BipadIncident, type BipadAlert } from '@/lib/bipad'
+import { ClimatePanel } from '@/components/climate-panel'
 import { fetchCurrentWeather, fetchCurrentPm25, fetchNepalQuakes, fetchCurrentTemps, fetchHourlyTemps, type CurrentWeather, type NepalQuake } from '@/lib/meteo'
 import { LineChart } from '@/components/charts'
 import { slugify } from '@/lib/data'
@@ -34,6 +35,7 @@ export default function EnvironmentPage() {
   const [liveTemps, setLiveTemps] = useState<Record<number, number>>({})
   const tempsFor = useRef<string | null>(null)
   const [loading, setLoading] = useState(true)
+
 
   useEffect(() => {
     let cancelled = false
@@ -246,13 +248,16 @@ export default function EnvironmentPage() {
           <MapPin size={12} /> Open any city above for tremors ranked by distance.
         </p>
       </section>
+      {/* ── Climate projections (NAP) ── */}
+      <ClimatePanel picker />
 
       {/* ── Sources ── */}
       <div style={{ padding: '.9rem 1.1rem', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', gap: '.6rem', boxShadow: 'var(--shadow-sm)', marginTop: '.75rem' }}>
         <Wind size={15} style={{ color: 'var(--primary)', flexShrink: 0 }} />
         <p style={{ margin: 0, fontSize: '.62rem', color: 'var(--text-secondary)' }}>
           <strong style={{ fontSize: '.74rem', color: 'var(--text)' }}>Live feeds, refreshed hourly.</strong><br />
-          Forecast &amp; observations: DHM MFD · Incidents &amp; alerts: BIPAD/NDRRMA · Tremors: USGS FDSN · Current conditions &amp; PM2.5: Open-Meteo
+          Forecast &amp; observations: DHM MFD · Incidents &amp; alerts &amp; climate projections: BIPAD/NDRRMA · Tremors: USGS FDSN · Current conditions &amp; PM2.5: Open-Meteo<br />
+          Losses, relief records and DRR budgets are on the <Link href="/disasters" className="panel-link" style={{ display: 'inline' }}>disaster ledger</Link>.
         </p>
       </div>
     </div>

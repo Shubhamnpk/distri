@@ -4263,7 +4263,7 @@ export const sources: Source[] = [
   {
     "title": "BIPAD Disaster-Risk API",
     "publisher": "NDRRMA",
-    "date": "Live (incidents, alerts, telemetry)",
+    "date": "Live (incidents, losses, relief, DRR budgets, climate projections)",
     "type": "API (live)",
     "verified": true,
     "url": "https://bipadportal.gov.np/"

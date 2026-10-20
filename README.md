@@ -78,6 +78,8 @@ Drishti operates on a zero-key, open-access architecture. Every live feed connec
 
 4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+The `/releases` page is connected to `Shubhamnpk/distri` by default. To use a different GitHub repository, set `NEXT_PUBLIC_GITHUB_REPOSITORY` in `.env.local` (for example, `https://github.com/owner/repository`) or in your deployment environment.
+
 ---
 
 ## Quality Checks & Building

@@ -16,13 +16,21 @@ const RANGE_OPTIONS = [
 ] as const
 type RangeKey = typeof RANGE_OPTIONS[number]['key']
 
-/** Keep only the last N non-empty points (or everything for 'max'). */
+/** Keep the last N points from the series itself (or everything for 'max'). */
 function rangeData(data: WbDataPoint[], range: RangeKey): WbDataPoint[] {
   const clean = data.filter(d => d.value != null)
   return range === 'max' ? clean : clean.slice(-Number(range))
 }
 
 const CURRENT_YEAR = String(new Date().getFullYear())
+
+/**
+ * Split point for actual vs forecast. The user-facing "current year" is the
+ * boundary: anything before it is history, it onward is projection. The WEO
+ * vintage (e.g. 2025-04) only labels the source; it must not move the split
+ * back to 2024/2025 while we are already past it.
+ */
+const FORECAST_START = Number(CURRENT_YEAR)
 
 /** Current-year point if present, else the latest actual ≤ this year. */
 function pickCurrent(arr: WbDataPoint[]): WbDataPoint | null {
@@ -45,10 +53,12 @@ type ModalData = {
   data: WbDataPoint[]
   color: string
   icon: React.ElementType
+  /** Year forecasts begin: years below are actual, this year onward are forecasts. */
+  forecastFrom?: number
 }
 
-function Stat({ icon: Icon, label, value, change, color, sparkData, onExpand }: {
-  icon: React.ElementType; label: string; value: string; change?: number; color?: string; sparkData?: WbDataPoint[]; onExpand?: () => void
+function Stat({ icon: Icon, label, value, change, color, sparkData, sparkForecastFrom, onExpand }: {
+  icon: React.ElementType; label: string; value: string; change?: number; color?: string; sparkData?: WbDataPoint[]; sparkForecastFrom?: number; onExpand?: () => void
 }) {
   const up = (change ?? 0) >= 0
   return (
@@ -75,15 +85,15 @@ function Stat({ icon: Icon, label, value, change, color, sparkData, onExpand }: 
       )}
       {sparkData && sparkData.length > 1 && (
         <div style={{ marginTop: '.3rem', opacity: .55 }}>
-          <LineChart data={sparkData} color={color || 'var(--primary)'} height={30} showArea formatValue={() => ''} />
+          <LineChart data={sparkData} color={color || 'var(--primary)'} height={30} showArea forecastFrom={sparkForecastFrom} formatValue={() => ''} />
         </div>
       )}
     </div>
   )
 }
 
-function TrendCard({ icon: Icon, label, value, unit, data, color, wide, onExpand, delta, spark }: {
-  icon: React.ElementType; label: string; value: string; unit?: string; data: WbDataPoint[]; color: string; wide?: boolean; onExpand?: () => void; delta?: number; spark?: WbDataPoint[]
+function TrendCard({ icon: Icon, label, value, unit, data, color, wide, onExpand, delta, spark, forecastFrom }: {
+  icon: React.ElementType; label: string; value: string; unit?: string; data: WbDataPoint[]; color: string; wide?: boolean; onExpand?: () => void; delta?: number; spark?: WbDataPoint[]; forecastFrom?: number
 }) {
   const view = spark && spark.length > 1 ? spark : data
   const first = data[0]?.value ?? 0
@@ -107,7 +117,7 @@ function TrendCard({ icon: Icon, label, value, unit, data, color, wide, onExpand
         {unit && <span style={{ fontSize: '.6rem', color: 'var(--text-tertiary)' }}>{unit}</span>}
       </div>
       <div style={{ marginTop: '.5rem' }}>
-        <LineChart data={view} color={color} height={wide ? 85 : 72} showArea formatValue={() => ''} />
+        <LineChart data={view} color={color} height={wide ? 85 : 72} showArea forecastFrom={forecastFrom} formatValue={() => ''} />
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.52rem', color: 'var(--text-tertiary)', marginTop: '.25rem' }}>
         <span>{view[0]?.year}</span>
@@ -186,22 +196,19 @@ export default function EconomyPage() {
   const [imfSource, setImfSource] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchEconomyData()
-      .then(async d => {
-        // IMF's direct DataMapper host is Akamai-blocked from some networks,
-        // which empties every IMF series. Backfill them from our DBnomics-proxied
-        // API route (same WEO dataset) so the outlook cards still populate.
-        const imfKeys = ['imfGdpGrowth', 'imfInflation', 'imfUnemployment', 'imfCurrentAccount', 'imfGovtDebt', 'imfFiscalBalance'] as const
-        if (imfKeys.some(k => !d[k].length)) {
-          try {
-            const res = await fetch('/api/imf')
-            if (res.ok) {
-              const { series, version } = (await res.json()) as { series?: Partial<EconomyData>; version?: string }
-              if (series) d = { ...d, ...series }
-              if (version) setImfSource(`IMF WEO ${version}`)
-            }
-          } catch {}
-        }
+    // /api/imf is the authoritative set: the IMF SDMX `WEO` flow (live vintage,
+    // 12 Nepali series). The direct DataMapper call inside fetchEconomyData is
+    // Akamai-blocked on many networks and only ever carries 6 series, so always
+    // merge the server payload over it.
+    Promise.all([
+      fetchEconomyData(),
+      fetch('/api/imf')
+        .then(r => r.ok ? r.json() as Promise<{ series?: Partial<EconomyData>; version?: string | null }> : null)
+        .catch(() => null),
+    ])
+      .then(([d0, imf]) => {
+        const d = imf?.series ? { ...d0, ...imf.series } : d0
+        if (imf?.version) setImfSource(`IMF WEO ${imf.version}`)
         setData(d)
       })
       .catch(() => setError('Failed to load economy data'))
@@ -212,7 +219,7 @@ export default function EconomyPage() {
 
   const latest = (arr: WbDataPoint[]) => arr[arr.length - 1]
   const prev = (arr: WbDataPoint[]) => arr.length >= 2 ? arr[arr.length - 2] : null
-  const openModal = useCallback((m: ModalData) => { setModal(m); setChartType('area'); setTimeRange('5') }, [])
+  const openModal = useCallback((m: ModalData) => { setModal(m); setChartType('area'); setTimeRange(m.forecastFrom ? '10' : '5') }, [])
   const modalFmt = useCallback((m: ModalData) => (v: number) => m.unit?.includes('%') ? `${v.toFixed(1)}%` : v >= 1e9 ? formatUsd(v) : formatNum(v), [])
 
   if (error) return (
@@ -272,13 +279,14 @@ export default function EconomyPage() {
     const delta = cur && pv && pv.value ? pctChange(cur.value ?? 0, pv.value) : undefined
     return { ...c, cur, delta }
   })
-  const outlookYear = outlook.length ? String(Math.max(...outlook.map(c => Number(c.cur?.year ?? 0)))) : ''
+  const outlookYear = outlook.length ? String(Math.max(...outlook.map(c => Number(c.d[c.d.length - 1]?.year ?? 0)))) : ''
 
   const imfCur = pickCurrent(data.imfGdpGrowth)
   const imfPrev = imfCur ? pickPrev(data.imfGdpGrowth, imfCur.year) : null
 
   const modalShown = modal ? rangeData(modal.data, timeRange) : []
-  const refX = modalShown.some(d => d.year === CURRENT_YEAR) ? CURRENT_YEAR : undefined
+  const modalHasActual = !!modal?.forecastFrom && modalShown.some(d => Number(d.year) < modal.forecastFrom!)
+  const modalHasForecast = !!modal?.forecastFrom && modalShown.some(d => Number(d.year) >= modal.forecastFrom!)
 
   return (
     <>
@@ -334,7 +342,7 @@ export default function EconomyPage() {
           <Stat icon={Globe2} label="Exports" value={formatUsd(expL?.value ?? 0)} change={expL && data.exports.length >= 2 ? pctChange(expL.value ?? 0, (prev(data.exports)?.value ?? 0)) : undefined} color="var(--primary)" sparkData={data.exports} onExpand={() => openModal({ label: 'Exports', value: formatUsd(expL?.value ?? 0), data: data.exports, color: 'var(--primary)', icon: Globe2 })} />
           <Stat icon={Users} label="Unemployment" value={`${(unempL?.value ?? 0).toFixed(1)}%`} color="var(--danger)" sparkData={data.unemployment} onExpand={() => openModal({ label: 'Unemployment', value: `${(unempL?.value ?? 0).toFixed(1)}%`, unit: 'of labor force', data: data.unemployment, color: 'var(--danger)', icon: Users })} />
           {imfCur && (
-            <Stat icon={ChartLine} label={`GDP forecast · ${imfCur.year}`} value={`${(imfCur.value ?? 0).toFixed(1)}%`} change={imfPrev && imfPrev.value ? pctChange(imfCur.value ?? 0, imfPrev.value) : undefined} color="#6366f1" sparkData={data.imfGdpGrowth.slice(-16)} onExpand={() => openModal({ label: 'Real GDP growth (IMF forecast)', value: `${(imfCur.value ?? 0).toFixed(1)}%`, unit: `annual %, incl. forecasts to ${outlookYear}`, data: data.imfGdpGrowth, color: '#6366f1', icon: ChartLine })} />
+            <Stat icon={ChartLine} label={`GDP forecast · ${imfCur.year}`} value={`${(imfCur.value ?? 0).toFixed(1)}%`} change={imfPrev && imfPrev.value ? pctChange(imfCur.value ?? 0, imfPrev.value) : undefined} color="#6366f1" sparkData={data.imfGdpGrowth.slice(-16)} sparkForecastFrom={FORECAST_START} onExpand={() => openModal({ label: 'Real GDP growth (IMF forecast)', value: `${(imfCur.value ?? 0).toFixed(1)}%`, unit: `annual %, solid = actual · dashed = forecast to ${outlookYear}`, data: data.imfGdpGrowth, color: '#6366f1', icon: ChartLine, forecastFrom: FORECAST_START })} />
           )}
         </section>
 
@@ -496,10 +504,10 @@ export default function EconomyPage() {
             <article className="panel" style={{ marginBottom: '1rem' }}>
               <p className="eyebrow">05 · WORLD OUTLOOK · IMF FORECASTS TO {outlookYear}</p>
               <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: '1.3rem', margin: '.15rem 0 0' }}>What the world expects of Nepal</h3>
-              <p className="muted" style={{ marginBottom: '.6rem' }}>IMF World Economic Outlook: history plus projections beyond {latest(data.gdpGrowth)?.year}{imfSource ? ` · via ${imfSource}` : ''}. Click any card to explore.</p>
+              <p className="muted" style={{ marginBottom: '.6rem' }}>IMF World Economic Outlook: history through {FORECAST_START - 1}, projections {FORECAST_START}–{outlookYear}{imfSource ? ` · ${imfSource}` : ''}. Solid = actual, dashed = forecast. Click any card to explore.</p>
               <div className="grid-auto">
                 {outlook.map(c => (
-                  <TrendCard key={c.label} icon={c.icon} label={c.label} value={c.cur ? c.fmt(c.cur.value ?? 0) : '-'} unit={c.cur ? `${c.unit} · ${c.cur.year}${Number(c.cur.year) >= Number(CURRENT_YEAR) ? ' forecast' : ''}` : c.unit} data={c.d} spark={c.d.slice(-16)} delta={c.delta} color={c.color} wide onExpand={() => openModal({ label: `${c.label} (IMF)`, value: c.cur ? c.fmt(c.cur.value ?? 0) : '-', unit: `${c.unit}, incl. forecasts`, data: c.d, color: c.color, icon: c.icon })} />
+                  <TrendCard key={c.label} icon={c.icon} label={c.label} value={c.cur ? c.fmt(c.cur.value ?? 0) : '-'} unit={c.cur ? `${c.unit} · ${c.cur.year}${Number(c.cur.year) >= Number(CURRENT_YEAR) ? ' forecast' : ''}` : c.unit} data={c.d} spark={c.d.slice(-16)} forecastFrom={FORECAST_START} delta={c.delta} color={c.color} wide onExpand={() => openModal({ label: `${c.label} (IMF)`, value: c.cur ? c.fmt(c.cur.value ?? 0) : '-', unit: `${c.unit}, solid = actual · dashed = forecast`, data: c.d, color: c.color, icon: c.icon, forecastFrom: FORECAST_START })} />
                 ))}
               </div>
             </article>
@@ -512,7 +520,7 @@ export default function EconomyPage() {
           <div style={{ flex: 1 }}>
             <strong style={{ fontSize: '.74rem' }}>Data sources: World Bank Open Data API · IMF World Economic Outlook · NRB fixing</strong>
             <p style={{ margin: '.1rem 0 0', fontSize: '.62rem', color: 'var(--text-secondary)' }}>
-              Historical data from api.worldbank.org, projections from imf.org DataMapper, today&apos;s rate from nrb.org.np · Hover any chart for exact values
+              Historical data from api.worldbank.org, projections from the IMF World Economic Outlook (SDMX/DataMapper), today&apos;s rate from nrb.org.np · Hover any chart for exact values
               <a href="https://data.worldbank.org/country/nepal" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 600, marginLeft: '.3rem' }}>View on World Bank <ArrowUpRight size={10} style={{ display: 'inline' }} /></a>
               <a href="https://www.imf.org/en/Publications/WEO" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 600, marginLeft: '.5rem' }}>IMF World Economic Outlook <ArrowUpRight size={10} style={{ display: 'inline' }} /></a>
             </p>
@@ -553,6 +561,7 @@ export default function EconomyPage() {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.5rem', marginBottom: '1rem' }}>
                   <span style={{ fontSize: '.6rem', color: 'var(--text-tertiary)' }}>
                     {modalShown.length > 1 ? `${modalShown[0].year}–${modalShown[modalShown.length - 1].year} · hover for change vs start` : 'No data in range'}
+                    {modalHasActual && modalHasForecast ? ` · solid = actual, dashed = forecast from ${modal.forecastFrom}` : modalHasForecast ? ' · all forecast' : ''}
                   </span>
                   <div style={{ display: 'flex', background: 'var(--bg-sunken)', borderRadius: '8px', padding: '3px' }}>
                     {RANGE_OPTIONS.map(o => (
@@ -563,9 +572,23 @@ export default function EconomyPage() {
                   </div>
                 </div>
                 {chartType === 'bar' ? (
-                  <BarChart data={modalShown} height={320} color={modal.color} showDelta yAxis refX={refX} refLabel={`${CURRENT_YEAR} · now`} formatValue={modalFmt(modal)} />
+                  <BarChart data={modalShown} height={320} color={modal.color} showDelta yAxis forecastFrom={modal.forecastFrom} formatValue={modalFmt(modal)} />
                 ) : (
-                  <LineChart data={modalShown} color={modal.color} height={320} showArea={chartType === 'area'} showDelta yAxis refX={refX} refLabel={`${CURRENT_YEAR} · now`} formatValue={modalFmt(modal)} />
+                  <LineChart data={modalShown} color={modal.color} height={320} showArea={chartType === 'area'} showDelta yAxis forecastFrom={modal.forecastFrom} formatValue={modalFmt(modal)} />
+                )}
+                {(modalHasActual || modalHasForecast) && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '.6rem', fontSize: '.6rem', color: 'var(--text-secondary)' }}>
+                    {modalHasActual && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.35rem' }}>
+                        <span style={{ display: 'inline-block', width: 22, borderTop: '2px solid', borderTopColor: modal.color }} /> actual
+                      </span>
+                    )}
+                    {modalHasForecast && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.35rem' }}>
+                        <span style={{ display: 'inline-block', width: 22, borderTop: '2px dashed', borderTopColor: modal.color }} /> forecast
+                      </span>
+                    )}
+                  </div>
                 )}
                 {(() => {
                   const sorted = [...modalShown].filter(d => d.value != null).sort((a, b) => (a.value ?? 0) - (b.value ?? 0))

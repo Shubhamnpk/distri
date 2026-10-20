@@ -3,16 +3,17 @@
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Droplets, MapPin, Activity, Wind, Flame, TriangleAlert } from 'lucide-react'
+import { ArrowLeft, Droplets, MapPin, Activity, Wind, Flame, TriangleAlert, Smile, Meh, Frown } from 'lucide-react'
 import { fetchDhmForecast, fetchDhmObservations, type DhmStationForecast, type DhmObservations, type DhmWeather } from '@/lib/dhm'
-import { fetchBipadIncidents, fetchBipadAlerts, type BipadIncident, type BipadAlert } from '@/lib/bipad'
+import { fetchBipadIncidents, fetchBipadAlerts, fetchBipadDistrictCentroids, type BipadIncident, type BipadAlert, type BipadGeo } from '@/lib/bipad'
 import { fetchCurrentWeather, fetchCurrentPm25, fetchNepalQuakes, fetchDailyHighLow, fetchHourlyTemps, type CurrentWeather, type NepalQuake } from '@/lib/meteo'
 import { slugify } from '@/lib/data'
-import { skyKind, SKY_META } from '@/lib/condition'
+import { skyKind, SKY_META, pm25Band } from '@/lib/condition'
 import { WeatherIcon, skyLucide } from '@/components/weather-icon'
 import { LineChart } from '@/components/charts'
 import { HazardFeed } from '@/components/hazard-feed'
-import { timeAgo, forecastDayLabel, isNptDay, isDayBySun, shortClock } from '@/lib/time'
+import { ClimatePanel } from '@/components/climate-panel'
+import { timeAgo, forecastDayLabel, isDayBySun, shortClock } from '@/lib/time'
 
 function quakeColor(mag: number): string {
   if (mag >= 5) return 'var(--danger)'
@@ -82,6 +83,7 @@ export default function CityDetailPage() {
   const [pm25, setPm25] = useState<number | null>(null)
   const [hourly, setHourly] = useState<{ time: string; value: number }[]>([])
   const [daily, setDaily] = useState<{ date: string; max: number | null; min: number | null }[]>([])
+  const [centroids, setCentroids] = useState<BipadGeo[]>([])
   const [missing, setMissing] = useState(false)
 
   const city = stations.find(s => slugify(s.name) === params.slug) ?? null
@@ -104,6 +106,14 @@ export default function CityDetailPage() {
       .catch(() => { if (!cancelled) setMissing(true) })
     return () => { cancelled = true }
   }, [params.slug])
+
+  useEffect(() => {
+    let cancelled = false
+    fetchBipadDistrictCentroids()
+      .then(d => { if (!cancelled) setCentroids(d.results) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     if (!city) return
@@ -149,7 +159,9 @@ export default function CityDetailPage() {
   const day1 = city?.manual_forecast?.find(d => d.day === 1) ?? city?.manual_forecast?.[0]
   const day2 = city?.manual_forecast?.find(d => d.day === 2) ?? city?.manual_forecast?.[1]
   const kind = skyKind(day1?.weather?.name)
-  const night = useMemo(() => isDayBySun(city?.sunrise, city?.sunset), [city?.sunrise, city?.sunset])
+  const night = !isDayBySun(city?.sunrise, city?.sunset)
+  const aqi = pm25Band(pm25)
+  const AqiIcon = aqi?.cls === 'status-bad' ? Frown : aqi?.cls === 'status-warn' ? Meh : aqi ? Smile : null
 
   // DHM gaps filled transparently: observed ← model today, forecast max ← model day.
   const dMin0 = daily[0]?.min ?? null
@@ -189,6 +201,19 @@ export default function CityDetailPage() {
       .sort((a, b) => a.km - b.km)
       .slice(0, 6)
   }, [stations, city])
+
+  /** DHM stations carry no district, so the climate panel uses the nearest district centroid. */
+  const nearDistrict = useMemo(() => {
+    if (!city) return null
+    let best: { id: number; title: string; km: number } | null = null
+    for (const d of centroids) {
+      const c = d.centroid?.coordinates
+      if (!c || c.length !== 2) continue
+      const km = distanceKm(city.latitude, city.longitude, c[1], c[0])
+      if (!best || km < best.km) best = { id: d.id, title: d.title ?? 'district', km }
+    }
+    return best
+  }, [centroids, city])
 
   /** Incidents/alerts within 50 km, newest first - shared feed renders them. */
   const nearby = useMemo(() => {
@@ -239,7 +264,7 @@ export default function CityDetailPage() {
                 { label: 'Observed min / max', val: <><Val v={obsMin} model={obsMinModel} /> / <Val v={obsMax} model={obsMaxModel} /></> },
                 { label: 'Rainfall today', val: observed?.rainfall != null ? `${observed.rainfall} mm` : '-' },
                 { label: 'Humidity', val: wx?.relative_humidity_2m != null ? `${wx.relative_humidity_2m}%` : '-' },
-                { label: 'PM2.5', val: pm25 != null ? `${pm25.toFixed(1)} µg/m³` : '-' },
+                { label: 'PM2.5', val: pm25 != null ? <>{pm25.toFixed(1)} µg/m³{aqi && <span className={`status-badge ${aqi.cls}`} style={{ marginLeft: '.35rem', fontSize: '.55rem', padding: '.1rem .4rem', verticalAlign: '1px' }}>{aqi.label}</span>}</> : '-' },
                 ...(city?.sunrise && city?.sunset
                   ? [{ label: 'Sunrise / sunset', val: <>{shortClock(city.sunrise)} · {shortClock(city.sunset)}</> }]
                   : []),
@@ -254,6 +279,11 @@ export default function CityDetailPage() {
           <div className="wx-stage" title={day1?.weather?.name ?? SKY_META[kind].label}>
             <span className="wx-halo"><WeatherIcon kind={kind} size={130} night={night} /></span>
             <span className="wx-caption">{day1?.weather?.name ?? SKY_META[kind].label}{night ? ' · night' : ''}</span>
+            {aqi && AqiIcon && (
+              <span className={`status-badge ${aqi.cls}`} title={`PM2.5 ${pm25?.toFixed(1)} µg/m³ · US EPA band`}>
+                <AqiIcon size={12} /> Air · {aqi.label}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -354,7 +384,7 @@ export default function CityDetailPage() {
               const dd = s.manual_forecast?.find(x => x.day === 1) ?? s.manual_forecast?.[0]
               const kk = skyKind(dd?.weather?.name)
               const mm = SKY_META[kk]
-              const IIcon = skyLucide(kk)
+              const IIcon = skyLucide(kk, night)
               return (
                 <Link key={s.id} href={`/environment/${slugify(s.name)}`} className="city-card">
                   <span className="city-icon" style={{ background: mm.bg, color: mm.tint }}>
@@ -389,6 +419,9 @@ export default function CityDetailPage() {
           <HazardFeed incidents={nearby.incidents} alerts={nearby.alerts} distances={nearby.distances} initial={4} />
         ) : <p className="muted">No incidents or alerts within 50 km - quiet skies over {city?.name ?? 'this station'}.</p>}
       </section>
+
+      {/* ── Climate projections for the nearest district ── */}
+      {nearDistrict && <ClimatePanel districtId={nearDistrict.id} districtName={nearDistrict.title} />}
 
       <div style={{ padding: '.9rem 1.1rem', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', gap: '.6rem', boxShadow: 'var(--shadow-sm)', marginTop: '.75rem' }}>
         <Wind size={15} style={{ color: 'var(--primary)', flexShrink: 0 }} />

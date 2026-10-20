@@ -3,9 +3,8 @@
 import { useState, useEffect } from 'react'
 import {
   ResponsiveContainer,
-  AreaChart as RAreaChart,
+  ComposedChart,
   Area,
-  LineChart as RLineChart,
   Line,
   BarChart as RBarChart,
   Bar,
@@ -13,7 +12,6 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  ReferenceLine,
   Tooltip,
 } from 'recharts'
 import { USD_SYMBOL } from '@/lib/currency'
@@ -37,7 +35,7 @@ const defaultFormat = (v: number): string => {
 /** Dark pill tooltip — recharts positions it natively (flips at edges, no viewport math). */
 function ChartTip({ active, payload, label, format, base, baseLabel, showDelta }: {
   active?: boolean
-  payload?: { value: number | string }[]
+  payload?: { value?: number | string | null; dataKey?: string | number }[]
   label?: string
   format: (v: number) => string
   base?: number | null
@@ -45,7 +43,10 @@ function ChartTip({ active, payload, label, format, base, baseLabel, showDelta }
   showDelta?: boolean
 }) {
   if (!active || !payload?.length) return null
-  const v = Number(payload[0].value ?? 0)
+  const point = payload.find(p => p.value != null && p.value !== '')
+  if (!point) return null
+  const v = Number(point.value)
+  const isForecast = point.dataKey === 'forecast'
   let delta: string | null = null
   if (showDelta && base != null && base !== 0) {
     const pct = ((v - base) / Math.abs(base)) * 100
@@ -62,7 +63,10 @@ function ChartTip({ active, payload, label, format, base, baseLabel, showDelta }
       whiteSpace: 'nowrap',
       boxShadow: '0 4px 12px rgba(0,0,0,.15)',
     }}>
-      <div>{label}: {format(v)}</div>
+      <div>
+        {label}: {format(v)}
+        {isForecast && <span style={{ marginLeft: '.35rem', opacity: .65, fontWeight: 500 }}>· forecast</span>}
+      </div>
       {delta && <div style={{ marginTop: '.15rem', fontWeight: 500, opacity: .7 }}>{delta}</div>}
     </div>
   )
@@ -78,35 +82,45 @@ function useResolved(color: string) {
   const [resolved, setResolved] = useState(color)
   const [grid, setGrid] = useState('#e5e7eb')
   const [tick, setTick] = useState('#9ca3af')
-  const [ink, setInk] = useState('#111827')
   useEffect(() => {
     const nextResolved = resolveColor(color)
     const nextGrid = resolveColor('var(--border-light)')
     const nextTick = resolveColor('var(--text-tertiary)')
-    const nextInk = resolveColor('var(--text)')
     setResolved(prev => (prev === nextResolved ? prev : nextResolved))
     setGrid(prev => (prev === nextGrid ? prev : nextGrid))
     setTick(prev => (prev === nextTick ? prev : nextTick))
-    setInk(prev => (prev === nextInk ? prev : nextInk))
   }, [color])
-  return { resolved, grid, tick, ink }
+  return { resolved, grid, tick }
 }
 
-/** Vertical marker for the current year - history left of it, forecast right. */
-function NowLine({ refX, refLabel, ink }: { refX: string; refLabel?: string; ink: string }) {
-  return (
-    <ReferenceLine
-      x={refX}
-      stroke={ink}
-      strokeWidth={1.5}
-      strokeDasharray="4,3"
-      label={{ value: refLabel ?? refX, position: 'top', fill: ink, fontSize: 8, fontWeight: 700 }}
-    />
-  )
+type ChartRow = { name: string; value: number | null; forecast: number | null }
+
+/**
+ * Split a series at `forecastFrom` (the WEO vintage year): history stays on
+ * `value`, projections move to `forecast`. The last actual point is repeated on
+ * `forecast` so the dashed line starts exactly where the solid one ends.
+ */
+function toRows(data: DataPoint[], forecastFrom?: number): ChartRow[] {
+  if (forecastFrom == null) return data.map(d => ({ name: d.year, value: d.value ?? 0, forecast: null }))
+  let lastActual = -1
+  data.forEach((d, i) => { if (Number(d.year) < forecastFrom && d.value != null) lastActual = i })
+  return data.map((d, i) => {
+    const isForecast = Number(d.year) >= forecastFrom
+    return {
+      name: d.year,
+      value: isForecast ? null : d.value,
+      forecast: isForecast ? d.value : i === lastActual ? d.value : null,
+    }
+  })
 }
 
-function toRows(data: DataPoint[]) {
-  return data.map(d => ({ name: d.year, value: d.value ?? 0 }))
+/** Bars don't need the bridge point — only colour the forecast bars differently. */
+function toBarRows(data: DataPoint[], forecastFrom?: number): ChartRow[] {
+  if (forecastFrom == null) return data.map(d => ({ name: d.year, value: d.value ?? 0, forecast: null }))
+  return data.map(d => {
+    const isForecast = Number(d.year) >= forecastFrom
+    return { name: d.year, value: isForecast ? null : d.value, forecast: isForecast ? d.value : null }
+  })
 }
 
 /** Show ~7 x labels max so dense series don't crowd the axis. */
@@ -116,7 +130,7 @@ function tickInterval(n: number): number | 'preserveStartEnd' {
 
 /* ─── BAR CHART ─── */
 export function BarChart({
-  data, color = 'var(--primary)', height = 180, formatValue, title, showDelta = false, yAxis = false, refX, refLabel,
+  data, color = 'var(--primary)', height = 180, formatValue, title, showDelta = false, yAxis = false, forecastFrom,
 }: {
   data: DataPoint[]
   color?: string
@@ -125,15 +139,14 @@ export function BarChart({
   title?: string
   showDelta?: boolean
   yAxis?: boolean
-  refX?: string
-  refLabel?: string
+  forecastFrom?: number
 }) {
   const [active, setActive] = useState<number | null>(null)
-  const { resolved, grid, tick, ink } = useResolved(color)
+  const { resolved, grid, tick } = useResolved(color)
   const format = formatValue || defaultFormat
   const first = firstPoint(data)
   if (!data.length) return null
-  const rows = toRows(data)
+  const rows = toBarRows(data, forecastFrom)
 
   return (
     <div>
@@ -147,7 +160,7 @@ export function BarChart({
             tickLine={false}
             axisLine={{ stroke: grid }}
             tickFormatter={(v: string) => v.slice(2)}
-            interval={tickInterval(rows.length)}
+            interval={rows.length <= 12 ? 0 : tickInterval(rows.length)}
             minTickGap={16}
           />
           {yAxis && (
@@ -161,12 +174,14 @@ export function BarChart({
             />
           )}
           <Tooltip content={<ChartTip format={format} showDelta={showDelta} base={first?.value} baseLabel={first?.year} />} cursor={{ fill: grid, opacity: 0.35 }} />
-          {refX && <NowLine refX={refX} refLabel={refLabel} ink={ink} />}
           <Bar dataKey="value" radius={[3, 3, 0, 0]} onMouseEnter={(_, i) => setActive(i)} isAnimationActive={false}>
             {rows.map((_, i) => (
               <Cell key={i} fill={resolved} fillOpacity={active === null || active === i ? 0.85 : 0.35} />
             ))}
           </Bar>
+          {forecastFrom != null && (
+            <Bar dataKey="forecast" radius={[3, 3, 0, 0]} fill={resolved} fillOpacity={0.18} stroke={resolved} strokeOpacity={0.55} strokeDasharray="3 3" isAnimationActive={false} />
+          )}
         </RBarChart>
       </ResponsiveContainer>
     </div>
@@ -175,7 +190,7 @@ export function BarChart({
 
 /* ─── LINE / AREA CHART ─── */
 export function LineChart({
-  data, color = 'var(--primary)', height = 120, formatValue, title, showArea = true, showDelta = false, yAxis = false, refX, refLabel,
+  data, color = 'var(--primary)', height = 120, formatValue, title, showArea = true, showDelta = false, yAxis = false, forecastFrom,
 }: {
   data: DataPoint[]
   color?: string
@@ -185,14 +200,13 @@ export function LineChart({
   showArea?: boolean
   showDelta?: boolean
   yAxis?: boolean
-  refX?: string
-  refLabel?: string
+  forecastFrom?: number
 }) {
-  const { resolved, grid, tick, ink } = useResolved(color)
+  const { resolved, grid, tick } = useResolved(color)
   const format = formatValue || defaultFormat
   const first = firstPoint(data)
   if (data.length < 2) return null
-  const rows = toRows(data)
+  const rows = toRows(data, forecastFrom)
   const gradId = `lg-${data[0]?.year}-${data[data.length - 1]?.year}-${height}-${color.replace(/[^a-z0-9]/gi, '').slice(0, 5)}`
 
   const axes = (
@@ -203,7 +217,7 @@ export function LineChart({
         tick={{ fill: tick, fontSize: 7.5 }}
         tickLine={false}
         axisLine={false}
-        interval={tickInterval(rows.length)}
+        interval={rows.length <= 12 ? 0 : tickInterval(rows.length)}
         minTickGap={24}
       />
       {yAxis && (
@@ -218,7 +232,6 @@ export function LineChart({
         />
       )}
       <Tooltip content={<ChartTip format={format} showDelta={showDelta} base={first?.value} baseLabel={first?.year} />} cursor={{ stroke: grid, strokeDasharray: '3,3' }} />
-      {refX && <NowLine refX={refX} refLabel={refLabel} ink={ink} />}
     </>
   )
 
@@ -226,23 +239,23 @@ export function LineChart({
     <div>
       {title && <span style={{ fontSize: '.6rem', color: 'var(--text-tertiary)', display: 'block', marginBottom: '.35rem' }}>{title}</span>}
       <ResponsiveContainer width="100%" height={height}>
-        {showArea ? (
-          <RAreaChart data={rows} margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
-            <defs>
-              <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={resolved} stopOpacity={0.2} />
-                <stop offset="100%" stopColor={resolved} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            {axes}
+        <ComposedChart data={rows} margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
+          <defs>
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={resolved} stopOpacity={0.2} />
+              <stop offset="100%" stopColor={resolved} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          {axes}
+          {showArea ? (
             <Area type="monotone" dataKey="value" stroke={resolved} strokeWidth={2} fill={`url(#${gradId})`} dot={false} activeDot={{ r: 5, fill: resolved, strokeWidth: 0 }} isAnimationActive={false} />
-          </RAreaChart>
-        ) : (
-          <RLineChart data={rows} margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
-            {axes}
+          ) : (
             <Line type="monotone" dataKey="value" stroke={resolved} strokeWidth={2} dot={false} activeDot={{ r: 5, fill: resolved, strokeWidth: 0 }} isAnimationActive={false} />
-          </RLineChart>
-        )}
+          )}
+          {forecastFrom != null && (
+            <Line type="monotone" dataKey="forecast" stroke={resolved} strokeWidth={2} strokeDasharray="6 4" dot={false} activeDot={{ r: 5, fill: resolved, strokeWidth: 0 }} isAnimationActive={false} />
+          )}
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   )

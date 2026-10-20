@@ -15,6 +15,7 @@ const navItems = [
   { href: '/procurement', label: 'Procurement' },
   { href: '/economy', label: 'Economy' },
   { href: '/environment', label: 'Environment' },
+  { href: '/disasters', label: 'Disasters' },
   { href: '/calendar', label: 'Calendar' },
 ]
 
