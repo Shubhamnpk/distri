@@ -130,6 +130,22 @@ export async function fetchNepseSectorMap(): Promise<Record<string, string>> {
   return map
 }
 
+export type NepseBroker = { memberCode: number; memberName: string; turnover30d: number; latestTurnover: number }
+
+/** Broker turnover rankings from the YONepse mirror. */
+export async function fetchNepseTopBrokers(): Promise<NepseBroker[]> {
+  const payload = await fetchJson<{ value?: Record<string, unknown>[] }>(`${BASE_URL}/other/brokers.json`)
+  return (payload?.value ?? [])
+    .filter(row => row.activeStatus === 'A' && Number(row.thirtyDaysTurnover) > 0)
+    .map(row => ({
+      memberCode: Number(row.memberCode ?? 0),
+      memberName: String(row.memberName ?? 'Unknown broker'),
+      turnover30d: Number(row.thirtyDaysTurnover ?? 0),
+      latestTurnover: Number(row.latestTurnover ?? 0),
+    }))
+    .sort((a, b) => b.turnover30d - a.turnover30d)
+}
+
 export type NepseMarketDay = {
   date: string
   turnover: number
@@ -341,6 +357,60 @@ export async function fetchLtpRecent(symbol: string, monthsBack = 3): Promise<Ne
   } catch {
     return []
   }
+}
+
+export type NepseSectorPerformancePoint = { date: string; value: number }
+
+/**
+ * Equal-weighted sector performance rebased to 100, aggregated from the LTP
+ * archive shards. This is a constituent-derived series, not an official NEPSE
+ * sector sub-index.
+ */
+export async function fetchNepseSectorPerformance(symbols: string[], monthsBack = 12): Promise<NepseSectorPerformancePoint[]> {
+  if (!symbols.length) return []
+  const manifest = await fetchJson<{ availableMonths?: string[] }>(`${BASE_URL}/ltp/manifest.json`)
+  const months = (manifest?.availableMonths ?? []).slice(-monthsBack)
+  const shards = await Promise.all(months.map(async month => ({
+    month,
+    data: await fetchJson<{ dates?: (string | number)[]; series?: Record<string, unknown[][]> }>(`${BASE_URL}/ltp/monthly/${month}.json`),
+  })))
+  const wanted = new Set(symbols.map(symbol => symbol.toUpperCase()))
+  const byDate = new Map<string, Map<string, number>>()
+  for (const { month, data } of shards) {
+    if (!data) continue
+    const dates = data.dates ?? []
+    for (const symbol of wanted) {
+      for (const row of data.series?.[symbol] ?? []) {
+        const day = String(dates[Number(row[0])] ?? '')
+        const close = Number(row[1] ?? 0)
+        if (!day || !(close > 0)) continue
+        const date = /^\d{4}-/.test(day) ? day : `${month}-${day.padStart(2, '0')}`
+        const values = byDate.get(date) ?? new Map<string, number>()
+        values.set(symbol, close)
+        byDate.set(date, values)
+      }
+    }
+  }
+  const previous = new Map<string, number>()
+  const points: NepseSectorPerformancePoint[] = []
+  let index = 100
+  for (const [date, closes] of [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    let returnSum = 0
+    let returnCount = 0
+    for (const [symbol, close] of closes) {
+      const last = previous.get(symbol)
+      if (last && last > 0) {
+        returnSum += (close - last) / last
+        returnCount += 1
+      }
+      previous.set(symbol, close)
+    }
+    if (returnCount) {
+      index *= 1 + returnSum / returnCount
+      points.push({ date, value: Number(index.toFixed(4)) })
+    }
+  }
+  return points
 }
 
 /** Dividend announcements (bonus + cash) from the mirror's 2,500-record history. */

@@ -12,6 +12,7 @@ import {
   fetchNepseDividendHistory,
   fetchNepseDisclosures,
   fetchUpcomingIpos,
+  fetchNepseTopBrokers,
 } from '@/lib/nepse'
 
 export const metadata: Metadata = {
@@ -22,7 +23,7 @@ export const metadata: Metadata = {
 export const revalidate = 3600
 
 export default async function MarketPage() {
-  const [stocks, summary, indices, status, topStocks, history, indexHistory, sectorMap, ipos, dividends, disclosures] = await Promise.all([
+  const [stocks, summary, indices, status, topStocks, history, indexHistory, sectorMap, ipos, dividends, disclosures, brokers] = await Promise.all([
     fetchNepseStocks(),
     fetchNepseMarketSummary(),
     fetchNepseIndices(),
@@ -34,6 +35,7 @@ export default async function MarketPage() {
     fetchUpcomingIpos(),
     fetchNepseDividendHistory(),
     fetchNepseDisclosures(),
+    fetchNepseTopBrokers(),
   ])
 
   return (
@@ -51,6 +53,7 @@ export default async function MarketPage() {
       ipos={ipos}
       dividends={dividends.slice(0, 6)}
       disclosures={disclosures.slice(0, 6)}
+      brokers={brokers.slice(0, 6)}
     />
   )
 }

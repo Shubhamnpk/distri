@@ -2924,7 +2924,7 @@ export function NationalMap() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
                   {impact.map(([k, v]) => (
                     <div key={k} className="bg-sunken" style={{ borderRadius: 6, padding: '.35rem .2rem', textAlign: 'center' }}>
-                      <strong style={{ display: 'block', fontSize: '.82rem', lineHeight: 1.2 }}>{v}</strong>
+                      <strong style={{ display: 'block', fontSize: '.82rem', lineHeight: 1.2, color: k === 'Deaths' && Number(v.replace(/,/g, '')) > 0 ? '#b91c1c' : undefined }}>{v}</strong>
                       <span className="text-tertiary" style={{ display: 'block', fontSize: '.48rem', fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', marginTop: 1 }}>{k}</span>
                     </div>
                   ))}

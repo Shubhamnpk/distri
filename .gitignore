@@ -15,7 +15,7 @@ dist/
 .env
 .env.*
 !.env.example
-
+.playwright-mcp/
 # Sandbox & tooling internals
 __v0_runtime_loader.js
 __v0_devtools.tsx

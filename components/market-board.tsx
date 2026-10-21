@@ -19,7 +19,7 @@ import {
 import { LineChart } from '@/components/charts'
 import { formatNpr, formatNum } from '@/lib/currency'
 import type { NepseIndex, NepseMarketSummary, NepseStock, NepseDividendRecord, NepseDisclosure } from '@/lib/types'
-import type { NepseIndexPoint, NepseMarketDay, NepseUpcomingIpo } from '@/lib/nepse'
+import type { NepseBroker, NepseIndexPoint, NepseMarketDay, NepseUpcomingIpo } from '@/lib/nepse'
 
 type Props = {
   stocks: NepseStock[]
@@ -35,6 +35,7 @@ type Props = {
   ipos: NepseUpcomingIpo[]
   dividends: NepseDividendRecord[]
   disclosures: NepseDisclosure[]
+  brokers: NepseBroker[]
 }
 
 type Row = NepseStock & { sector: string }
@@ -278,6 +279,7 @@ export function MarketBoard({
   ipos,
   dividends,
   disclosures,
+  brokers,
 }: Props) {
   const [heatSector, setHeatSector] = useState('All')
   const [heatMode, setHeatMode] = useState<HeatMode>('sector')
@@ -286,7 +288,7 @@ export function MarketBoard({
   const [hover, setHover] = useState<Row | null>(null)
   const [query, setQuery] = useState('')
   const [tableSector, setTableSector] = useState('All')
-  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'turnover', dir: -1 })
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 | 0 }>({ key: 'turnover', dir: -1 })
   const [showAll, setShowAll] = useState(false)
   const heatRef = useRef<HTMLDivElement | null>(null)
   const [heatBox, setHeatBox] = useState({ width: 0, height: 0 })
@@ -406,7 +408,9 @@ export function MarketBoard({
 
   const ranked = useMemo(() => {
     const key = sort.key
-    return [...filteredRows(rows, tableSector, query)].sort((a, b) => {
+    const filtered = filteredRows(rows, tableSector, query)
+    if (sort.dir === 0) return filtered
+    return [...filtered].sort((a, b) => {
       if (key === 'symbol') return a.symbol.localeCompare(b.symbol) * sort.dir
       if (key === 'sector') return a.sector.localeCompare(b.sector) * sort.dir
       const pick = (row: Row): number => {
@@ -424,11 +428,6 @@ export function MarketBoard({
   const visible = showAll ? ranked : ranked.slice(0, 60)
 
   const maxMove = Math.max(1, ...topGainers.slice(0, 6).map(stock => Math.abs(stock.percentChange ?? 0)), ...topLosers.slice(0, 6).map(stock => Math.abs(stock.percentChange ?? 0)))
-  const turnoverLeaders = useMemo(
-    () => [...traded].sort((a, b) => (b.turnover ?? 0) - (a.turnover ?? 0)).slice(0, 6),
-    [traded],
-  )
-
   const historyMax = Math.max(1, ...history.map(day => day.turnover))
   const historyAverage = history.length ? history.reduce((sum, day) => sum + day.turnover, 0) / history.length : 0
   const asOf = history.length ? history[history.length - 1].date : ''
@@ -474,9 +473,12 @@ export function MarketBoard({
     : null
 
   const toggleSort = (key: SortKey) => {
-    setSort(current => current.key === key
-      ? { key, dir: current.dir === 1 ? -1 : 1 }
-      : { key, dir: key === 'symbol' || key === 'sector' ? 1 : -1 })
+    setSort(current => {
+      if (current.key !== key) return { key, dir: key === 'symbol' || key === 'sector' ? 1 : -1 }
+      if (current.dir === 0) return { key, dir: key === 'symbol' || key === 'sector' ? 1 : -1 }
+      if (key === 'symbol' || key === 'sector') return current.dir === 1 ? { key, dir: -1 } : { key, dir: 0 }
+      return current.dir === -1 ? { key, dir: 1 } : { key, dir: 0 }
+    })
   }
 
   const clearHover = (symbol: string) => {
@@ -537,7 +539,7 @@ export function MarketBoard({
         }}
       >
         {label}
-        {sort.key === k && <span aria-hidden>{sort.dir === 1 ? '\u2191' : '\u2193'}</span>}
+        {sort.key === k && sort.dir !== 0 && <span aria-hidden>{sort.dir === 1 ? '\u2191' : '\u2193'}</span>}
       </button>
     </th>
   )
@@ -750,7 +752,7 @@ export function MarketBoard({
               <div key={group.sector} className="sector-heat-card">
                 <div className="sector-heat-head">
                   <div style={{ minWidth: 0 }}>
-                    <strong>{sectorLabel(group.sector)}</strong>
+                    <strong><Link href={`/market/sector/${encodeURIComponent(group.sector)}`} style={{ textDecoration: 'none', color: 'inherit' }}>{sectorLabel(group.sector)}</Link></strong>
                     <span>{group.count} listed{group.items.length < group.count ? ` · top ${group.items.length} shown` : ''}</span>
                   </div>
                   <span className={group.avg >= 0 ? 'positive' : 'negative'}>{signed(group.avg)}%</span>
@@ -798,7 +800,7 @@ export function MarketBoard({
       <div className="lower-grid-3" style={{ marginBottom: '.75rem' }}>
         <MoverPanel title="Top gainers" eyebrow="Session leaders" tone="up" stocks={topGainers.slice(0, 6)} max={maxMove} />
         <MoverPanel title="Top losers" eyebrow="Session laggards" tone="down" stocks={topLosers.slice(0, 6)} max={maxMove} />
-        <MoverPanel title="Turnover leaders" eyebrow="Most traded" tone="neutral" stocks={turnoverLeaders} max={maxMove} />
+        <BrokerPanel brokers={brokers} />
       </div>
 
       <div className="lower-grid-3" style={{ marginBottom: '.75rem' }}>
@@ -958,7 +960,7 @@ export function MarketBoard({
                       <Link href={`/market/${stock.symbol}`} className="market-company-link">{stock.companyName}</Link>
                     </td>
                     <td style={tdStyle}>
-                      <span style={{ fontSize: '.56rem', padding: '.12rem .4rem', borderRadius: 999, background: 'var(--bg-sunken)', color: 'var(--text-secondary)' }}>{sectorLabel(stock.sector)}</span>
+                      <Link href={`/market/sector/${encodeURIComponent(stock.sector)}`} style={{ fontSize: '.56rem', padding: '.12rem .4rem', borderRadius: 999, background: 'var(--bg-sunken)', color: 'var(--text-secondary)', textDecoration: 'none' }}>{sectorLabel(stock.sector)}</Link>
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600 }}>{formatNpr(stock.ltp)}</td>
                     <td style={{ ...tdStyle, textAlign: 'right' }}>
@@ -1031,6 +1033,31 @@ function filteredRows(rows: Row[], sector: string, query: string): Row[] {
     if (!needle) return true
     return row.symbol.toLowerCase().includes(needle) || row.companyName.toLowerCase().includes(needle)
   })
+}
+
+function BrokerPanel({ brokers }: { brokers: NepseBroker[] }) {
+  return (
+    <div className="panel" style={{ padding: '1rem 1.1rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.5rem' }}>
+        <div>
+          <p className="eyebrow" style={{ marginBottom: '.1rem' }}>30-day turnover</p>
+          <h3 style={{ fontSize: '1rem' }}>Top brokers</h3>
+        </div>
+        <Landmark size={15} style={{ color: 'var(--text-tertiary)' }} />
+      </div>
+      <div style={{ marginTop: '.45rem' }}>
+        {brokers.length === 0 && <span style={{ fontSize: '.66rem', color: 'var(--text-tertiary)' }}>Broker rankings are unavailable.</span>}
+        {brokers.map((broker, index) => (
+          <div key={broker.memberCode} style={{ display: 'grid', gridTemplateColumns: '16px minmax(0, 1fr) auto', alignItems: 'center', gap: '.45rem', padding: '.42rem .3rem', borderTop: index === 0 ? 0 : '1px solid var(--border-light)' }}>
+            <span style={{ fontSize: '.56rem', fontWeight: 700, color: 'var(--text-tertiary)' }}>{index + 1}</span>
+            <span style={{ minWidth: 0, fontSize: '.66rem', fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{broker.memberName}</span>
+            <strong style={{ fontSize: '.66rem', whiteSpace: 'nowrap' }}>{formatNpr(broker.turnover30d)}</strong>
+          </div>
+        ))}
+      </div>
+      <p style={{ margin: '.45rem .3rem 0', fontSize: '.56rem', color: 'var(--text-tertiary)' }}>Ranked by reported 30-day turnover.</p>
+    </div>
+  )
 }
 
 function MoverPanel({ title, eyebrow, tone, stocks, max }: {
