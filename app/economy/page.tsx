@@ -1,11 +1,13 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState, useCallback } from 'react'
 import { ArrowUpRight, ArrowDownRight, TrendingUp, TrendingDown, BarChart3, Users, Zap, Globe2, Heart, GraduationCap, Leaf, Landmark, Banknote, ChartLine, Info, X, Maximize2 } from 'lucide-react'
 import { BarChart, LineChart } from '@/components/charts'
 import { fetchEconomyData, pctChange, type EconomyData, type WbDataPoint } from '@/lib/api'
 import { formatNpr, formatNprRate, formatFxPair, formatNum, formatUsd, NPR_SYMBOL, USD_SYMBOL } from '@/lib/currency'
 import { getNrbUsdRate } from '@/lib/nrb'
+import type { NepseMarketPulse } from '@/lib/types'
 
 const RANGE_OPTIONS = [
   { key: '2', label: '2Y' },
@@ -44,6 +46,17 @@ function pickCurrent(arr: WbDataPoint[]): WbDataPoint | null {
 /** The point for the year immediately before `year`. */
 function pickPrev(arr: WbDataPoint[], year: string): WbDataPoint | null {
   return arr.find(d => d.year === String(Number(year) - 1) && d.value != null) ?? null
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+function formatSessionDate(iso?: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? '')
+  return match ? `${Number(match[3])} ${MONTHS[Number(match[2]) - 1]} ${match[1]}` : (iso ?? '')
+}
+
+function signed(n: number, digits = 2): string {
+  return `${n >= 0 ? '+' : ''}${n.toFixed(digits)}`
 }
 
 type ModalData = {
@@ -167,7 +180,7 @@ function EconomySkeleton() {
       </div>
 
       <nav className="eco-nav" aria-hidden="true">
-        {['01 · Growth', '02 · Prices & money', '03 · People', '04 · Structure', '05 · World outlook'].map(s => <span key={s}>{s}</span>)}
+        {['01 · Growth', '02 · Prices & money', '03 · People', '04 · Structure', '05 · Nepali market', '06 · World outlook'].map(s => <span key={s}>{s}</span>)}
       </nav>
 
       <section className="grid-auto" style={{ marginBottom: '1rem' }}>
@@ -194,6 +207,8 @@ export default function EconomyPage() {
   const [timeRange, setTimeRange] = useState<RangeKey>('5')
   const [liveNrb, setLiveNrb] = useState<number | null>(null)
   const [imfSource, setImfSource] = useState<string | null>(null)
+  const [market, setMarket] = useState<NepseMarketPulse | null>(null)
+  const [marketError, setMarketError] = useState(false)
 
   useEffect(() => {
     // /api/imf is the authoritative set: the IMF SDMX `WEO` flow (live vintage,
@@ -214,6 +229,13 @@ export default function EconomyPage() {
       .catch(() => setError('Failed to load economy data'))
     let cancelled = false
     getNrbUsdRate().then(r => { if (!cancelled && r) setLiveNrb(r) }).catch(() => {})
+    fetch('/api/market')
+      .then(r => {
+        if (!r.ok) throw new Error('Market snapshot unavailable')
+        return r.json() as Promise<NepseMarketPulse>
+      })
+      .then(payload => { if (!cancelled) setMarket(payload) })
+      .catch(() => { if (!cancelled) setMarketError(true) })
     return () => { cancelled = true }
   }, [])
 
@@ -251,6 +273,22 @@ export default function EconomyPage() {
 
   const tradeBalance = (expL?.value ?? 0) - (impL?.value ?? 0)
   const liveNprRate = data.exchangeRate.length ? (latest(data.exchangeRate)?.value ?? 133.5) : 133.5
+
+  const summary = market?.summary ?? null
+  const headline = market?.headline ?? null
+  const indexMove = headline ? headline.close - headline.previousClose : 0
+  const indexPct = headline && headline.previousClose ? (indexMove / headline.previousClose) * 100 : 0
+  const indexRange = headline ? headline.high52 - headline.low52 : 0
+  const indexRangePos = headline && indexRange > 0
+    ? Math.min(100, Math.max(0, ((headline.close - headline.low52) / indexRange) * 100))
+    : 50
+  const breadth = market?.breadth
+  const breadthTotal = Math.max(1, breadth?.total ?? 0)
+  const advanceWidth = ((breadth?.advances ?? 0) / breadthTotal) * 100
+  const declineWidth = ((breadth?.declines ?? 0) / breadthTotal) * 100
+  const topSectors = market?.topSectors ?? []
+  const bottomSectors = market?.bottomSectors ?? []
+  const maxSectorMove = Math.max(0.01, ...topSectors.map(s => Math.abs(s.avg)), ...bottomSectors.map(s => Math.abs(s.avg)))
 
   // World Outlook - every IMF WEO series we have. A series the source can't
   // supply is simply absent from /api/imf, so its card is never rendered.
@@ -332,7 +370,8 @@ export default function EconomyPage() {
           <a href="#prices">02 · Prices & money</a>
           <a href="#people">03 · People</a>
           <a href="#structure">04 · Structure</a>
-          <a href="#outlook">05 · World outlook</a>
+          <a href="#market">05 · Nepali market</a>
+          <a href="#outlook">06 · World outlook</a>
         </nav>
 
         {/* ─── PULSE ─── */}
@@ -498,11 +537,160 @@ export default function EconomyPage() {
           </article>
         </section>
 
-        {/* ─── 05 WORLD OUTLOOK ─── */}
+        {/* ─── 05 NEPALI MARKET ─── */}
+        <section id="market" className="eco-section">
+          <article className="panel" style={{ marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 0 }}>
+                <p className="eyebrow">05 · NEPALI MARKET</p>
+                <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: '1.3rem', margin: '.15rem 0 0' }}>What the bourse is pricing</h3>
+                <p className="muted" style={{ marginBottom: '.6rem' }}>NEPSE close, traded value, market breadth and sector leadership from the latest session.</p>
+              </div>
+              <Link
+                href="/market"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '.35rem', background: 'var(--primary)', color: '#fff',
+                  borderRadius: 999, padding: '.5rem .9rem', fontSize: '.7rem', fontWeight: 700, whiteSpace: 'nowrap',
+                }}
+              >
+                Open market dashboard <ArrowUpRight size={13} />
+              </Link>
+            </div>
+
+            {market ? (
+              <>
+                <div className="grid-4" style={{ marginTop: '.3rem', marginBottom: 0 }}>
+                  <div style={{ padding: '1rem 1.1rem', background: 'var(--bg-sunken)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-light)' }}>
+                    <span className="eyebrow" style={{ fontSize: '.55rem', margin: 0 }}>NEPSE INDEX</span>
+                    <strong style={{ display: 'block', fontSize: '1.55rem', letterSpacing: '-.04em', marginTop: '.1rem' }}>{headline ? headline.close.toFixed(2) : '-'}</strong>
+                    <span style={{ fontSize: '.66rem', fontWeight: 700, color: indexMove >= 0 ? 'var(--primary)' : 'var(--danger)' }}>
+                      {indexMove >= 0 ? <ArrowUpRight size={11} style={{ display: 'inline' }} /> : <ArrowDownRight size={11} style={{ display: 'inline' }} />}
+                      {` ${signed(indexMove)} (${signed(indexPct)}%) today`}
+                    </span>
+                    {headline && indexRange > 0 && (
+                      <div style={{ marginTop: '.55rem' }}>
+                        <div style={{ height: 4, background: 'var(--border)', borderRadius: 999, position: 'relative' }}>
+                          <span style={{ position: 'absolute', left: `${indexRangePos}%`, top: -2, width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', transform: 'translateX(-50%)' }} />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.52rem', color: 'var(--text-tertiary)', marginTop: '.25rem' }}>
+                          <span>52W low {headline.low52.toFixed(2)}</span>
+                          <span>high {headline.high52.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ padding: '1rem 1.1rem', background: 'var(--bg-sunken)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-light)' }}>
+                    <span className="eyebrow" style={{ fontSize: '.55rem', margin: 0 }}>TURNOVER</span>
+                    <strong style={{ display: 'block', fontSize: '1.25rem', letterSpacing: '-.03em', marginTop: '.2rem' }}>{summary ? formatNpr(summary.totalTurnover) : '-'}</strong>
+                    <span style={{ fontSize: '.6rem', color: 'var(--text-tertiary)' }}>
+                      {summary ? `${formatNum(summary.totalTrades)} trades · ${formatNum(summary.totalVolume)} shares` : 'Awaiting session data'}
+                    </span>
+                  </div>
+
+                  <div style={{ padding: '1rem 1.1rem', background: 'var(--bg-sunken)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-light)' }}>
+                    <span className="eyebrow" style={{ fontSize: '.55rem', margin: 0 }}>MARKET CAP</span>
+                    <strong style={{ display: 'block', fontSize: '1.25rem', letterSpacing: '-.03em', marginTop: '.2rem' }}>{summary?.marketCap ? formatNpr(summary.marketCap) : '-'}</strong>
+                    <span style={{ fontSize: '.6rem', color: 'var(--text-tertiary)' }}>{summary ? `${formatNum(summary.scripsTraded ?? 0)} scrips traded` : 'Listed equity value'}</span>
+                  </div>
+
+                  <div style={{ padding: '1rem 1.1rem', background: 'var(--bg-sunken)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-light)' }}>
+                    <span className="eyebrow" style={{ fontSize: '.55rem', margin: 0 }}>BREADTH</span>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '.45rem', marginTop: '.15rem' }}>
+                      <strong style={{ fontSize: '1.1rem', color: 'var(--primary)' }}>{breadth?.advances ?? 0}</strong>
+                      <span style={{ fontSize: '.58rem', color: 'var(--text-tertiary)' }}>up</span>
+                      <strong style={{ fontSize: '1.1rem', color: 'var(--danger)' }}>{breadth?.declines ?? 0}</strong>
+                      <span style={{ fontSize: '.58rem', color: 'var(--text-tertiary)' }}>down</span>
+                    </div>
+                    <div style={{ display: 'flex', height: 5, borderRadius: 999, overflow: 'hidden', background: 'var(--border)', marginTop: '.45rem' }}>
+                      <span style={{ width: `${advanceWidth}%`, background: 'var(--primary)' }} />
+                      <span style={{ width: `${declineWidth}%`, background: 'var(--danger)' }} />
+                    </div>
+                    <span style={{ display: 'block', fontSize: '.55rem', color: 'var(--text-tertiary)', marginTop: '.25rem' }}>{breadth?.flat ?? 0} unchanged of {breadth?.total ?? 0} securities</span>
+                  </div>
+                </div>
+
+                <div className="grid-2" style={{ marginTop: '.7rem', marginBottom: 0 }}>
+                  <div style={{ padding: '1rem 1.1rem', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-light)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '.55rem' }}>
+                      <span className="eyebrow" style={{ fontSize: '.55rem', margin: 0 }}>SECTOR PULSE</span>
+                      <span style={{ fontSize: '.52rem', color: 'var(--text-tertiary)' }}>average move</span>
+                    </div>
+                    {topSectors.map(sector => (
+                      <div key={sector.name} style={{ marginBottom: '.45rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.68rem', marginBottom: '.18rem' }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>{sector.name}</span>
+                          <strong style={{ color: sector.avg >= 0 ? 'var(--primary)' : 'var(--danger)' }}>{signed(sector.avg)}%</strong>
+                        </div>
+                        <div style={{ height: 4, background: 'var(--bg-sunken)', borderRadius: 999, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${Math.max(4, (Math.abs(sector.avg) / maxSectorMove) * 100)}%`, background: sector.avg >= 0 ? 'var(--primary)' : 'var(--danger)', opacity: .7, borderRadius: 999 }} />
+                        </div>
+                      </div>
+                    ))}
+                    {bottomSectors[0] && (
+                      <div style={{ marginTop: '.3rem', paddingTop: '.45rem', borderTop: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', fontSize: '.62rem' }}>
+                        <span style={{ color: 'var(--text-tertiary)' }}>Weakest: {bottomSectors[0].name}</span>
+                        <span style={{ color: 'var(--danger)', fontWeight: 700 }}>{signed(bottomSectors[0].avg)}%</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ padding: '1rem 1.1rem', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-light)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '.55rem' }}>
+                      <span className="eyebrow" style={{ fontSize: '.55rem', margin: 0 }}>SESSION MOVERS</span>
+                      <span style={{ fontSize: '.52rem', color: 'var(--text-tertiary)' }}>{market.session ? formatSessionDate(market.session) : 'Latest session'}</span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.7rem' }}>
+                      <div>
+                        <span style={{ fontSize: '.52rem', color: 'var(--primary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em' }}>Gainers</span>
+                        {market.gainers.map(stock => (
+                          <Link key={stock.symbol} href={`/market/${stock.symbol}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '.3rem', padding: '.3rem 0', borderBottom: '1px solid var(--border-light)', textDecoration: 'none' }}>
+                            <span style={{ minWidth: 0 }}>
+                              <strong style={{ display: 'block', fontSize: '.64rem' }}>{stock.symbol}</strong>
+                              <span style={{ fontSize: '.52rem', color: 'var(--text-tertiary)' }}>{formatNpr(stock.ltp)}</span>
+                            </span>
+                            <span style={{ fontSize: '.62rem', color: 'var(--primary)', fontWeight: 700, whiteSpace: 'nowrap' }}>{signed(stock.percentChange ?? 0)}%</span>
+                          </Link>
+                        ))}
+                        {market.gainers.length === 0 && <p className="muted" style={{ fontSize: '.6rem', margin: '.3rem 0 0' }}>No gainers.</p>}
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '.52rem', color: 'var(--danger)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em' }}>Losers</span>
+                        {market.losers.map(stock => (
+                          <Link key={stock.symbol} href={`/market/${stock.symbol}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '.3rem', padding: '.3rem 0', borderBottom: '1px solid var(--border-light)', textDecoration: 'none' }}>
+                            <span style={{ minWidth: 0 }}>
+                              <strong style={{ display: 'block', fontSize: '.64rem' }}>{stock.symbol}</strong>
+                              <span style={{ fontSize: '.52rem', color: 'var(--text-tertiary)' }}>{formatNpr(stock.ltp)}</span>
+                            </span>
+                            <span style={{ fontSize: '.62rem', color: 'var(--danger)', fontWeight: 700, whiteSpace: 'nowrap' }}>{signed(stock.percentChange ?? 0)}%</span>
+                          </Link>
+                        ))}
+                        {market.losers.length === 0 && <p className="muted" style={{ fontSize: '.6rem', margin: '.3rem 0 0' }}>No losers.</p>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '.6rem', flexWrap: 'wrap', fontSize: '.58rem', color: 'var(--text-tertiary)', marginTop: '.6rem' }}>
+                  <span>{market.session ? `Session ${formatSessionDate(market.session)} · ` : ''}yonepse mirror</span>
+                  <span>{market.isOpen === true ? 'Market open' : market.isOpen === false ? 'Market closed' : 'Status unavailable'}{market.lastChecked ? ` · updated ${formatSessionDate(market.lastChecked)}` : ''}</span>
+                </div>
+              </>
+            ) : marketError ? (
+              <div style={{ padding: '.9rem 1rem', background: 'var(--bg-sunken)', borderRadius: 'var(--radius-lg)', fontSize: '.7rem', color: 'var(--text-secondary)' }}>
+                Market snapshot unavailable right now. The full board is still live on the <Link href="/market" style={{ color: 'var(--primary)', fontWeight: 600 }}>market dashboard</Link>.
+              </div>
+            ) : (
+              <span className="sk" style={{ display: 'block', width: '100%', height: 150, borderRadius: 'var(--radius-lg)' }} />
+            )}
+          </article>
+        </section>
+
+        {/* ─── 06 WORLD OUTLOOK ─── */}
         <section id="outlook" className="eco-section">
           {outlook.length > 0 && (
             <article className="panel" style={{ marginBottom: '1rem' }}>
-              <p className="eyebrow">05 · WORLD OUTLOOK · IMF FORECASTS TO {outlookYear}</p>
+              <p className="eyebrow">06 · WORLD OUTLOOK · IMF FORECASTS TO {outlookYear}</p>
               <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: '1.3rem', margin: '.15rem 0 0' }}>What the world expects of Nepal</h3>
               <p className="muted" style={{ marginBottom: '.6rem' }}>IMF World Economic Outlook: history through {FORECAST_START - 1}, projections {FORECAST_START}–{outlookYear}{imfSource ? ` · ${imfSource}` : ''}. Solid = actual, dashed = forecast. Click any card to explore.</p>
               <div className="grid-auto">
@@ -518,7 +706,7 @@ export default function EconomyPage() {
         <div style={{ padding: '.9rem 1.1rem', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', gap: '.6rem', boxShadow: 'var(--shadow-sm)' }}>
           <Info size={15} style={{ color: 'var(--primary)', flexShrink: 0 }} />
           <div style={{ flex: 1 }}>
-            <strong style={{ fontSize: '.74rem' }}>Data sources: World Bank Open Data API · IMF World Economic Outlook · NRB fixing</strong>
+            <strong style={{ fontSize: '.74rem' }}>Data sources: World Bank Open Data API · IMF World Economic Outlook · NRB fixing · NEPSE (yonepse)</strong>
             <p style={{ margin: '.1rem 0 0', fontSize: '.62rem', color: 'var(--text-secondary)' }}>
               Historical data from api.worldbank.org, projections from the IMF World Economic Outlook (SDMX/DataMapper), today&apos;s rate from nrb.org.np · Hover any chart for exact values
               <a href="https://data.worldbank.org/country/nepal" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 600, marginLeft: '.3rem' }}>View on World Bank <ArrowUpRight size={10} style={{ display: 'inline' }} /></a>

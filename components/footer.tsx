@@ -11,6 +11,7 @@ const exploreLinks = [
   { href: '/companies', label: 'Companies' },
   { href: '/market', label: 'Market' },
   { href: '/projects', label: 'Projects' },
+  { href: '/places', label: 'Places' },
   { href: '/map', label: 'National Map' },
   { href: '/procurement', label: 'Procurement' },
   { href: '/economy', label: 'Economy' },

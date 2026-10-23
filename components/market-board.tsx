@@ -17,7 +17,9 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import { LineChart } from '@/components/charts'
+import { SortableTh, TableShell, useTableSort } from '@/components/data-table'
 import { formatNpr, formatNum } from '@/lib/currency'
+import { sortRows, type SortKind } from '@/lib/table-sort'
 import type { NepseIndex, NepseMarketSummary, NepseStock, NepseDividendRecord, NepseDisclosure } from '@/lib/types'
 import type { NepseBroker, NepseIndexPoint, NepseMarketDay, NepseUpcomingIpo } from '@/lib/nepse'
 
@@ -43,6 +45,28 @@ type SortKey = 'symbol' | 'sector' | 'ltp' | 'change' | 'volume' | 'turnover' | 
 type SizeKey = 'turnover' | 'marketCap'
 type HeatMode = 'sector' | 'mixed'
 type IndexRangeKey = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y'
+
+const SORT_KINDS: Record<SortKey, SortKind> = {
+  symbol: 'text',
+  sector: 'text',
+  ltp: 'number',
+  change: 'number',
+  volume: 'number',
+  turnover: 'number',
+  cap: 'number',
+  trades: 'number',
+}
+
+const SORT_ACCESSORS: Record<SortKey, (row: Row) => string | number | null | undefined> = {
+  symbol: row => row.symbol,
+  sector: row => row.sector,
+  ltp: row => row.ltp,
+  change: row => row.percentChange,
+  volume: row => row.volume,
+  turnover: row => row.turnover,
+  cap: row => row.marketCap,
+  trades: row => row.trades,
+}
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -288,7 +312,7 @@ export function MarketBoard({
   const [hover, setHover] = useState<Row | null>(null)
   const [query, setQuery] = useState('')
   const [tableSector, setTableSector] = useState('All')
-  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 | 0 }>({ key: 'turnover', dir: -1 })
+  const { sort, toggleSort } = useTableSort<SortKey>({ key: 'turnover', dir: -1 }, SORT_KINDS)
   const [showAll, setShowAll] = useState(false)
   const heatRef = useRef<HTMLDivElement | null>(null)
   const [heatBox, setHeatBox] = useState({ width: 0, height: 0 })
@@ -407,22 +431,8 @@ export function MarketBoard({
   const groupedSecurityCount = sectorGroups.reduce((sum, group) => sum + group.count, 0)
 
   const ranked = useMemo(() => {
-    const key = sort.key
     const filtered = filteredRows(rows, tableSector, query)
-    if (sort.dir === 0) return filtered
-    return [...filtered].sort((a, b) => {
-      if (key === 'symbol') return a.symbol.localeCompare(b.symbol) * sort.dir
-      if (key === 'sector') return a.sector.localeCompare(b.sector) * sort.dir
-      const pick = (row: Row): number => {
-        if (key === 'ltp') return row.ltp
-        if (key === 'change') return row.percentChange ?? 0
-        if (key === 'volume') return row.volume ?? 0
-        if (key === 'turnover') return row.turnover ?? 0
-        if (key === 'cap') return row.marketCap ?? 0
-        return row.trades ?? 0
-      }
-      return (pick(a) - pick(b)) * sort.dir
-    })
+    return sortRows(filtered, sort, SORT_ACCESSORS)
   }, [rows, tableSector, query, sort])
 
   const visible = showAll ? ranked : ranked.slice(0, 60)
@@ -472,15 +482,6 @@ export function MarketBoard({
     ? Math.min(100, Math.max(0, ((headline.close - headline.low52) / (headline.high52 - headline.low52)) * 100))
     : null
 
-  const toggleSort = (key: SortKey) => {
-    setSort(current => {
-      if (current.key !== key) return { key, dir: key === 'symbol' || key === 'sector' ? 1 : -1 }
-      if (current.dir === 0) return { key, dir: key === 'symbol' || key === 'sector' ? 1 : -1 }
-      if (key === 'symbol' || key === 'sector') return current.dir === 1 ? { key, dir: -1 } : { key, dir: 0 }
-      return current.dir === -1 ? { key, dir: 1 } : { key, dir: 0 }
-    })
-  }
-
   const clearHover = (symbol: string) => {
     setHover(current => (current?.symbol === symbol ? null : current))
   }
@@ -503,46 +504,6 @@ export function MarketBoard({
     fontWeight: 600,
     whiteSpace: 'nowrap',
   })
-
-  const thStyle: CSSProperties = {
-    padding: '0 0 .5rem',
-    borderBottom: '1px solid var(--border)',
-    color: 'var(--text-tertiary)',
-    fontSize: '.56rem',
-    fontWeight: 700,
-    letterSpacing: '.07em',
-    textTransform: 'uppercase',
-    whiteSpace: 'nowrap',
-  }
-
-  const tdStyle: CSSProperties = {
-    padding: '.52rem .45rem',
-    borderTop: '1px solid var(--border-light)',
-    fontVariantNumeric: 'tabular-nums',
-    whiteSpace: 'nowrap',
-  }
-
-  const Th = ({ label, k, align = 'right' }: { label: string; k: SortKey; align?: 'left' | 'right' }) => (
-    <th style={{ ...thStyle, textAlign: align }}>
-      <button
-        type="button"
-        onClick={() => toggleSort(k)}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 2,
-          color: sort.key === k ? 'var(--accent)' : 'inherit',
-          fontSize: 'inherit',
-          fontWeight: 'inherit',
-          letterSpacing: 'inherit',
-          textTransform: 'inherit',
-        }}
-      >
-        {label}
-        {sort.key === k && sort.dir !== 0 && <span aria-hidden>{sort.dir === 1 ? '\u2191' : '\u2193'}</span>}
-      </button>
-    </th>
-  )
 
   return (
     <div className="content-wrap">
@@ -689,7 +650,8 @@ export function MarketBoard({
         </div>
       </div>
 
-      <div className="panel" style={{ marginBottom: '.75rem' }}>
+      <div className="market-heat-layout">
+        <div className="panel">
         <div className="panel-head" style={{ flexWrap: 'wrap', gap: '.65rem' }}>
           <div>
             <p className="eyebrow" style={{ marginBottom: '.2rem' }}>Turnover heatmap</p>
@@ -750,13 +712,14 @@ export function MarketBoard({
             )}
             {groupLayouts.map(group => (
               <div key={group.sector} className="sector-heat-card">
-                <div className="sector-heat-head">
+                <Link href={`/market/sector/${encodeURIComponent(group.sector)}`} className="sector-heat-head" aria-label={`Open ${sectorLabel(group.sector)} sector detail`}>
                   <div style={{ minWidth: 0 }}>
-                    <strong><Link href={`/market/sector/${encodeURIComponent(group.sector)}`} style={{ textDecoration: 'none', color: 'inherit' }}>{sectorLabel(group.sector)}</Link></strong>
+                    <strong>{sectorLabel(group.sector)}</strong>
                     <span>{group.count} listed{group.items.length < group.count ? ` · top ${group.items.length} shown` : ''}</span>
                   </div>
-                  <span className={group.avg >= 0 ? 'positive' : 'negative'}>{signed(group.avg)}%</span>
-                </div>
+                  <span className={`sector-heat-move ${group.avg >= 0 ? 'positive' : 'negative'}`}>{signed(group.avg)}%</span>
+                  <ArrowUpRight size={11} className="sector-heat-open" aria-hidden />
+                </Link>
                 <div className="sector-heat-map">
                   {group.tiles.map(tile => (
                     <HeatTile
@@ -795,12 +758,15 @@ export function MarketBoard({
             <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: 'color-mix(in oklab, var(--accent) 42%, var(--bg-elevated))' }} /> +5%
           </span>
         </div>
+        </div>
+        <div className="market-heat-rail">
+          <BrokerPanel brokers={brokers} />
+        </div>
       </div>
 
-      <div className="lower-grid-3" style={{ marginBottom: '.75rem' }}>
+      <div className="grid-2" style={{ marginBottom: '.75rem' }}>
         <MoverPanel title="Top gainers" eyebrow="Session leaders" tone="up" stocks={topGainers.slice(0, 6)} max={maxMove} />
         <MoverPanel title="Top losers" eyebrow="Session laggards" tone="down" stocks={topLosers.slice(0, 6)} max={maxMove} />
-        <BrokerPanel brokers={brokers} />
       </div>
 
       <div className="lower-grid-3" style={{ marginBottom: '.75rem' }}>
@@ -929,20 +895,20 @@ export function MarketBoard({
           </div>
         </div>
 
-        <div style={{ overflowX: 'auto', marginTop: '.8rem' }}>
-          <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse', fontSize: '.69rem' }}>
+        <TableShell minWidth={860}>
+          <table className="data-table">
             <thead>
               <tr>
-                <th style={{ ...thStyle, textAlign: 'right', width: 28 }}>#</th>
-                <Th label="Symbol" k="symbol" align="left" />
-                <th style={{ ...thStyle, textAlign: 'left' }}>Company</th>
-                <Th label="Sector" k="sector" align="left" />
-                <Th label="LTP" k="ltp" />
-                <Th label="Change" k="change" />
-                <Th label="Volume" k="volume" />
-                <Th label="Turnover" k="turnover" />
-                <Th label="Market cap" k="cap" />
-                <Th label="Trades" k="trades" />
+                <th scope="col" className="data-table-th is-right data-table-index">#</th>
+                <SortableTh label="Symbol" column="symbol" sort={sort} onSort={toggleSort} align="left" />
+                <th scope="col" className="data-table-th is-left">Company</th>
+                <SortableTh label="Sector" column="sector" sort={sort} onSort={toggleSort} align="left" />
+                <SortableTh label="LTP" column="ltp" sort={sort} onSort={toggleSort} />
+                <SortableTh label="Change" column="change" sort={sort} onSort={toggleSort} />
+                <SortableTh label="Volume" column="volume" sort={sort} onSort={toggleSort} />
+                <SortableTh label="Turnover" column="turnover" sort={sort} onSort={toggleSort} />
+                <SortableTh label="Market cap" column="cap" sort={sort} onSort={toggleSort} />
+                <SortableTh label="Trades" column="trades" sort={sort} onSort={toggleSort} />
               </tr>
             </thead>
             <tbody>
@@ -952,31 +918,36 @@ export function MarketBoard({
                 const up = pct >= 0
                 return (
                   <tr key={stock.symbol} className="market-row">
-                    <td style={{ ...tdStyle, textAlign: 'right', color: 'var(--text-tertiary)', fontSize: '.58rem' }}>{index + 1}</td>
-                    <td style={{ ...tdStyle, fontWeight: 700 }}>
+                    <td className="data-table-index">{index + 1}</td>
+                    <td className="is-left" style={{ fontWeight: 700 }}>
                       <Link href={`/market/${stock.symbol}`} className="market-symbol-link">{stock.symbol}</Link>
                     </td>
-                    <td style={{ ...tdStyle, maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-secondary)' }}>
+                    <td className="is-left data-table-company">
                       <Link href={`/market/${stock.symbol}`} className="market-company-link">{stock.companyName}</Link>
                     </td>
-                    <td style={tdStyle}>
+                    <td className="is-left">
                       <Link href={`/market/sector/${encodeURIComponent(stock.sector)}`} style={{ fontSize: '.56rem', padding: '.12rem .4rem', borderRadius: 999, background: 'var(--bg-sunken)', color: 'var(--text-secondary)', textDecoration: 'none' }}>{sectorLabel(stock.sector)}</Link>
                     </td>
-                    <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600 }}>{formatNpr(stock.ltp)}</td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }}>
+                    <td style={{ fontWeight: 600 }}>{formatNpr(stock.ltp)}</td>
+                    <td>
                       <strong className={up ? 'positive' : 'negative'}>{signed(pct)}%</strong>
                       <span style={{ display: 'block', fontSize: '.56rem', color: 'var(--text-tertiary)' }}>{signed(point)}</span>
                     </td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }}>{stock.volume ? formatNum(stock.volume) : '—'}</td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }}>{stock.turnover ? formatNpr(stock.turnover) : '—'}</td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }}>{stock.marketCap ? formatNpr(stock.marketCap) : '—'}</td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }}>{stock.trades ? formatNum(stock.trades) : '—'}</td>
+                    <td>{stock.volume ? formatNum(stock.volume) : '—'}</td>
+                    <td>{stock.turnover ? formatNpr(stock.turnover) : '—'}</td>
+                    <td>{stock.marketCap ? formatNpr(stock.marketCap) : '—'}</td>
+                    <td>{stock.trades ? formatNum(stock.trades) : '—'}</td>
                   </tr>
                 )
               })}
+              {visible.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="data-table-empty">No securities match this filter.</td>
+                </tr>
+              )}
             </tbody>
           </table>
-        </div>
+        </TableShell>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap', marginTop: '.7rem', fontSize: '.62rem', color: 'var(--text-tertiary)' }}>
           <span>
@@ -1047,7 +1018,7 @@ function BrokerPanel({ brokers }: { brokers: NepseBroker[] }) {
       </div>
       <div style={{ marginTop: '.45rem' }}>
         {brokers.length === 0 && <span style={{ fontSize: '.66rem', color: 'var(--text-tertiary)' }}>Broker rankings are unavailable.</span>}
-        {brokers.map((broker, index) => (
+        {brokers.slice(0, 8).map((broker, index) => (
           <div key={broker.memberCode} style={{ display: 'grid', gridTemplateColumns: '16px minmax(0, 1fr) auto', alignItems: 'center', gap: '.45rem', padding: '.42rem .3rem', borderTop: index === 0 ? 0 : '1px solid var(--border-light)' }}>
             <span style={{ fontSize: '.56rem', fontWeight: 700, color: 'var(--text-tertiary)' }}>{index + 1}</span>
             <span style={{ minWidth: 0, fontSize: '.66rem', fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{broker.memberName}</span>
@@ -1055,7 +1026,9 @@ function BrokerPanel({ brokers }: { brokers: NepseBroker[] }) {
           </div>
         ))}
       </div>
-      <p style={{ margin: '.45rem .3rem 0', fontSize: '.56rem', color: 'var(--text-tertiary)' }}>Ranked by reported 30-day turnover.</p>
+      <p style={{ margin: '.45rem .3rem 0', fontSize: '.56rem', color: 'var(--text-tertiary)' }}>
+        {brokers.length > 8 ? `Top 8 of ${brokers.length} active brokers` : 'Ranked by reported 30-day turnover.'}
+      </p>
     </div>
   )
 }

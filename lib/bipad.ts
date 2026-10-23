@@ -400,6 +400,10 @@ export type DistrictProfile = {
   male: number
   female: number
   households: number
+  /** Population aged 5+, used as the denominator for the literacy rate. */
+  above5: number
+  /** Literate population aged 5+, kept so provinces can aggregate rates correctly. */
+  literate: number
   /** Share of the 5+ population that is literate, from summed totals (null when the API blanks them). */
   literacy: number | null
   ageBands: { band: string; male: number; female: number }[]
@@ -433,6 +437,8 @@ export async function fetchBipadDistrictProfile(districtId: number): Promise<Dis
     male: sum(r => r.malePopulation),
     female: sum(r => r.femalePopulation),
     households: sum(r => r.householdCount),
+    above5,
+    literate,
     literacy: above5 > 0 ? (literate / above5) * 100 : null,
     ageBands: bands,
   }

@@ -259,6 +259,26 @@ export type NepseData = {
   topLosers: NepseStock[]
 }
 
+export type NepseSectorPulse = {
+  name: string
+  avg: number
+  count: number
+  turnover: number
+}
+
+export type NepseMarketPulse = {
+  headline: NepseIndex | null
+  summary: NepseMarketSummary | null
+  breadth: { advances: number; declines: number; flat: number; total: number }
+  topSectors: NepseSectorPulse[]
+  bottomSectors: NepseSectorPulse[]
+  gainers: NepseStock[]
+  losers: NepseStock[]
+  session: string
+  isOpen: boolean | null
+  lastChecked?: string
+}
+
 // ── Project-Nepal Types ──
 
 export type ProjectNepalProject = {

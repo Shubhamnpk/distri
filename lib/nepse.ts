@@ -100,17 +100,24 @@ export async function fetchNepseIndices(): Promise<NepseIndex[]> {
   if (!rows) return []
   return rows
     .filter(r => r.index)
-    .map(r => ({
-      name: String(r.index ?? ''),
-      close: Number(r.close ?? 0),
-      change: Number(r.change ?? 0),
-      changePct: Number(r.perChange ?? 0),
-      previousClose: Number(r.previousClose ?? 0),
-      high: Number(r.high ?? 0),
-      low: Number(r.low ?? 0),
-      high52: Number(r.fiftyTwoWeekHigh ?? 0),
-      low52: Number(r.fiftyTwoWeekLow ?? 0),
-    }))
+    .map(r => {
+      const close = Number(r.close ?? 0)
+      const previousClose = Number(r.previousClose ?? 0)
+      // The feed's change/perChange are unsigned magnitudes - always positive,
+      // so a down day reads as a gain. Derive both from close vs previous close.
+      const change = previousClose > 0 ? close - previousClose : Number(r.change ?? 0)
+      return {
+        name: String(r.index ?? ''),
+        close,
+        change,
+        changePct: previousClose > 0 ? (change / previousClose) * 100 : Number(r.perChange ?? 0),
+        previousClose,
+        high: Number(r.high ?? 0),
+        low: Number(r.low ?? 0),
+        high52: Number(r.fiftyTwoWeekHigh ?? 0),
+        low52: Number(r.fiftyTwoWeekLow ?? 0),
+      }
+    })
 }
 
 /** Headline NEPSE Index entry (close 2591.81 on 2026-10-12). */
@@ -134,8 +141,9 @@ export type NepseBroker = { memberCode: number; memberName: string; turnover30d:
 
 /** Broker turnover rankings from the YONepse mirror. */
 export async function fetchNepseTopBrokers(): Promise<NepseBroker[]> {
-  const payload = await fetchJson<{ value?: Record<string, unknown>[] }>(`${BASE_URL}/other/brokers.json`)
-  return (payload?.value ?? [])
+  const payload = await fetchJson<Record<string, unknown>[] | { value?: Record<string, unknown>[] }>(`${BASE_URL}/other/brokers.json`)
+  const rows = Array.isArray(payload) ? payload : payload?.value ?? []
+  return rows
     .filter(row => row.activeStatus === 'A' && Number(row.thirtyDaysTurnover) > 0)
     .map(row => ({
       memberCode: Number(row.memberCode ?? 0),

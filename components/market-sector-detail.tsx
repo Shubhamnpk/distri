@@ -2,14 +2,39 @@
 
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
-import { Activity, ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Flame, Search, TrendingDown, TrendingUp } from 'lucide-react'
+import { Activity, ArrowLeft, Flame, Search, TrendingDown, TrendingUp } from 'lucide-react'
 import { formatNpr, formatNum } from '@/lib/currency'
 import { MarketSectorChart } from '@/components/market-sector-chart'
+import { SortableTh, TableShell, useTableSort } from '@/components/data-table'
+import { sortRows, type SortKind } from '@/lib/table-sort'
 import type { NepseSectorPerformancePoint } from '@/lib/nepse'
 import type { NepseStock } from '@/lib/types'
 
 type SortKey = 'symbol' | 'company' | 'ltp' | 'change' | 'high' | 'low' | 'volume' | 'turnover' | 'trades'
-type SortState = { key: SortKey; direction: 1 | -1 | 0 }
+
+const SORT_KINDS: Record<SortKey, SortKind> = {
+  symbol: 'text',
+  company: 'text',
+  ltp: 'number',
+  change: 'number',
+  high: 'number',
+  low: 'number',
+  volume: 'number',
+  turnover: 'number',
+  trades: 'number',
+}
+
+const SORT_ACCESSORS: Record<SortKey, (stock: NepseStock) => string | number | null | undefined> = {
+  symbol: stock => stock.symbol,
+  company: stock => stock.companyName,
+  ltp: stock => stock.ltp,
+  change: stock => stock.percentChange,
+  high: stock => stock.high,
+  low: stock => stock.low,
+  volume: stock => stock.volume,
+  turnover: stock => stock.turnover,
+  trades: stock => stock.trades,
+}
 
 function columnsLabel(key: SortKey) {
   return ({ symbol: 'Symbol', company: 'Company', ltp: 'LTP', change: 'Change', high: 'High', low: 'Low', volume: 'Volume', turnover: 'Turnover', trades: 'Trades' })[key]
@@ -44,28 +69,12 @@ function Movers({ title, icon, rows, direction }: { title: string; icon: 'up' | 
 
 export function MarketSectorDetail({ sector, rows, marketTurnover, performance }: { sector: string; rows: NepseStock[]; marketTurnover: number; performance: NepseSectorPerformancePoint[] }) {
   const [query, setQuery] = useState('')
-  const [sort, setSort] = useState<SortState>({ key: 'turnover', direction: -1 })
+  const { sort, toggleSort } = useTableSort<SortKey>({ key: 'turnover', dir: -1 }, SORT_KINDS)
 
   const sortedRows = useMemo(() => {
     const needle = query.trim().toLowerCase()
     const filtered = rows.filter(stock => !needle || stock.symbol.toLowerCase().includes(needle) || stock.companyName.toLowerCase().includes(needle))
-    if (sort.direction === 0) return filtered
-    const accessors: Record<SortKey, (stock: NepseStock) => number | string> = {
-      symbol: stock => stock.symbol,
-      company: stock => stock.companyName,
-      ltp: stock => stock.ltp,
-      change: stock => stock.percentChange,
-      high: stock => stock.high,
-      low: stock => stock.low,
-      volume: stock => stock.volume,
-      turnover: stock => stock.turnover,
-      trades: stock => stock.trades ?? 0,
-    }
-    const get = accessors[sort.key]
-    return [...filtered].sort((a, b) => {
-      const av = get(a), bv = get(b)
-      return (typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv))) * sort.direction
-    })
+    return sortRows(filtered, sort, SORT_ACCESSORS)
   }, [rows, query, sort])
 
   const turnover = rows.reduce((sum, stock) => sum + stock.turnover, 0)
@@ -81,17 +90,7 @@ export function MarketSectorDetail({ sector, rows, marketTurnover, performance }
   const breadthLabel = advShare >= 60 ? 'Broadly advancing' : advShare <= 40 ? 'Broadly declining' : 'Mixed session'
   const breadthColor = advShare >= 60 ? 'var(--accent)' : advShare <= 40 ? 'var(--danger)' : 'var(--text-secondary)'
   const sortName = columnsLabel(sort.key)
-  const sortDirection = sort.direction === 0 ? 'default order' : sort.direction === 1 ? (sort.key === 'symbol' || sort.key === 'company' ? 'A to Z' : 'lowest first') : (sort.key === 'symbol' || sort.key === 'company' ? 'Z to A' : 'highest first')
-
-  function toggleSort(key: SortKey) {
-    setSort(current => {
-      if (current.key !== key) return { key, direction: key === 'symbol' || key === 'company' ? 1 : -1 }
-      const text = key === 'symbol' || key === 'company'
-      if (current.direction === 0) return { key, direction: text ? 1 : -1 }
-      if (text) return { key, direction: current.direction === 1 ? -1 : 0 }
-      return { key, direction: current.direction === -1 ? 1 : 0 }
-    })
-  }
+  const sortDirection = sort.dir === 0 ? 'default order' : sort.dir === 1 ? (sort.key === 'symbol' || sort.key === 'company' ? 'A to Z' : 'lowest first') : (sort.key === 'symbol' || sort.key === 'company' ? 'Z to A' : 'highest first')
 
   const columns: { key: SortKey; label: string; text?: boolean }[] = [
     { key: 'symbol', label: 'Symbol', text: true }, { key: 'company', label: 'Company', text: true },
@@ -135,7 +134,35 @@ export function MarketSectorDetail({ sector, rows, marketTurnover, performance }
 
       <section className="panel" id="constituents" style={{ scrollMarginTop: 90 }}>
         <div className="panel-head" style={{ flexWrap: 'wrap', gap: '.7rem' }}><div><p className="eyebrow" style={{ marginBottom: '.2rem' }}>Sector constituents</p><h2 style={{ margin: 0, fontSize: '1.05rem' }}>All {rows.length} securities</h2><p className="muted">Sort: <strong style={{ color: 'var(--accent)' }}>{sortName} · {sortDirection}</strong>. Click a heading to change order; click the same heading to cycle through both directions and original order.</p></div><label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', border: '1px solid var(--border)', borderRadius: 8, padding: '.45rem .6rem', background: 'var(--bg)' }}><Search size={13} style={{ color: 'var(--text-tertiary)' }} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search symbol or company" aria-label="Search sector stocks" style={{ width: 180, border: 0, outline: 0, background: 'transparent', fontSize: '.68rem' }} /></label></div>
-        <div style={{ overflowX: 'auto', marginTop: '.8rem' }}><table style={{ width: '100%', minWidth: 930, borderCollapse: 'collapse', fontSize: '.68rem' }}><thead><tr>{columns.map(column => <th key={column.key} scope="col" style={{ padding: '.5rem .45rem', borderBottom: '1px solid var(--border)', textAlign: column.text ? 'left' : 'right', color: sort.key === column.key ? 'var(--accent)' : 'var(--text-tertiary)', fontSize: '.56rem', textTransform: 'uppercase', letterSpacing: '.05em', whiteSpace: 'nowrap' }}><button type="button" onClick={() => toggleSort(column.key)} aria-label={`Sort by ${column.label}`} aria-sort={sort.key === column.key ? sort.direction === 0 ? 'none' : sort.direction === 1 ? 'ascending' : 'descending' : 'none'} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: column.text ? 'flex-start' : 'flex-end', gap: '.2rem', width: '100%', color: 'inherit', font: 'inherit', cursor: 'pointer' }}>{column.label}{sort.key === column.key && sort.direction !== 0 ? sort.direction === 1 ? <ArrowUp size={11} /> : <ArrowDown size={11} /> : <ArrowUpDown size={11} style={{ opacity: .5 }} />}</button></th>)}</tr></thead><tbody>{sortedRows.map(stock => <tr key={stock.symbol} className="market-row"><td style={{ padding: '.55rem .45rem', borderTop: '1px solid var(--border-light)', fontWeight: 750 }}><Link href={`/market/${stock.symbol}`} style={{ color: 'inherit', textDecoration: 'none' }}>{stock.symbol}</Link></td><td style={{ padding: '.55rem .45rem', borderTop: '1px solid var(--border-light)', color: 'var(--text-secondary)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis' }}>{stock.companyName}</td><td style={{ padding: '.55rem .45rem', borderTop: '1px solid var(--border-light)', textAlign: 'right' }}>{formatNpr(stock.ltp)}</td><td className={tone(stock.percentChange)} style={{ padding: '.55rem .45rem', borderTop: '1px solid var(--border-light)', textAlign: 'right', fontWeight: 700 }}>{changeText(stock.percentChange)}</td><td style={{ padding: '.55rem .45rem', borderTop: '1px solid var(--border-light)', textAlign: 'right' }}>{formatNpr(stock.high)}</td><td style={{ padding: '.55rem .45rem', borderTop: '1px solid var(--border-light)', textAlign: 'right' }}>{formatNpr(stock.low)}</td><td style={{ padding: '.55rem .45rem', borderTop: '1px solid var(--border-light)', textAlign: 'right' }}>{formatNum(stock.volume)}</td><td style={{ padding: '.55rem .45rem', borderTop: '1px solid var(--border-light)', textAlign: 'right' }}>{formatNpr(stock.turnover)}</td><td style={{ padding: '.55rem .45rem', borderTop: '1px solid var(--border-light)', textAlign: 'right' }}>{formatNum(stock.trades)}</td></tr>)}</tbody></table></div>
+                <TableShell minWidth={930}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                {columns.map(column => (
+                  <SortableTh key={column.key} label={column.label} column={column.key} sort={sort} onSort={toggleSort} align={column.text ? 'left' : 'right'} />
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRows.map(stock => (
+                <tr key={stock.symbol}>
+                  <td className="is-left" style={{ fontWeight: 750 }}><Link href={`/market/${stock.symbol}`} className="market-symbol-link">{stock.symbol}</Link></td>
+                  <td className="is-left data-table-company">{stock.companyName}</td>
+                  <td>{formatNpr(stock.ltp)}</td>
+                  <td className={tone(stock.percentChange)} style={{ fontWeight: 700 }}>{changeText(stock.percentChange)}</td>
+                  <td>{formatNpr(stock.high)}</td>
+                  <td>{formatNpr(stock.low)}</td>
+                  <td>{formatNum(stock.volume)}</td>
+                  <td>{formatNpr(stock.turnover)}</td>
+                  <td>{formatNum(stock.trades)}</td>
+                </tr>
+              ))}
+              {sortedRows.length === 0 && (
+                <tr><td colSpan={9} className="data-table-empty">No securities match this search.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </TableShell>
         <p className="muted" style={{ margin: '.65rem 0 0', fontSize: '.6rem' }}>{sortedRows.length} of {rows.length} securities · High and low are session values.</p>
       </section>
       <p className="muted" style={{ margin: '.8rem 0 0', fontSize: '.6rem', lineHeight: 1.6 }}>Source: YONepse mirror of NEPSE, refreshed hourly. Session figures can lag the official close. Informational only.</p>

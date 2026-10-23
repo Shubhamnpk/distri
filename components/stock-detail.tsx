@@ -20,6 +20,7 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import { LineChart } from '@/components/charts'
+import { TableShell } from '@/components/data-table'
 import { formatNpr, formatNum } from '@/lib/currency'
 import { formatFiscalYearLabel } from '@/lib/fiscal-year'
 import { groupReportsByFy } from '@/lib/nepse'
@@ -717,34 +718,37 @@ export function StockDetail({ stock, sector, history, peers, profile, rank, fina
             </div>
             <Layers size={16} style={{ color: 'var(--text-tertiary)' }} />
           </div>
-          <div style={{ overflowX: 'auto', marginTop: '.7rem' }}>
-            <table style={{ width: '100%', minWidth: 520, borderCollapse: 'collapse', fontSize: '.68rem' }}>
+          <TableShell minWidth={520} className="stock-peer-table">
+            <table className="data-table">
               <thead>
-                <tr style={{ color: 'var(--text-tertiary)', fontSize: '.56rem', textTransform: 'uppercase', letterSpacing: '.06em' }}>
-                  <th style={{ textAlign: 'left', padding: '0 0 .5rem', borderBottom: '1px solid var(--border)' }}>Symbol</th>
-                  <th style={{ textAlign: 'left', padding: '0 0 .5rem', borderBottom: '1px solid var(--border)' }}>Company</th>
-                  <th style={{ textAlign: 'right', padding: '0 0 .5rem', borderBottom: '1px solid var(--border)' }}>LTP</th>
-                  <th style={{ textAlign: 'right', padding: '0 0 .5rem', borderBottom: '1px solid var(--border)' }}>Change</th>
-                  <th style={{ textAlign: 'right', padding: '0 0 .5rem', borderBottom: '1px solid var(--border)' }}>Turnover</th>
+                <tr>
+                  <th scope="col" className="data-table-th is-left">Symbol</th>
+                  <th scope="col" className="data-table-th is-left">Company</th>
+                  <th scope="col" className="data-table-th is-right">LTP</th>
+                  <th scope="col" className="data-table-th is-right">Change</th>
+                  <th scope="col" className="data-table-th is-right">Turnover</th>
                 </tr>
               </thead>
               <tbody>
                 {peers.map(peer => (
-                  <tr key={peer.symbol} className="market-row">
-                    <td style={{ padding: '.5rem .45rem', borderTop: '1px solid var(--border-light)', fontWeight: 700 }}>
+                  <tr key={peer.symbol}>
+                    <td className="is-left" style={{ fontWeight: 700 }}>
                       <Link href={`/market/${peer.symbol}`} className="market-symbol-link">{peer.symbol}</Link>
                     </td>
-                    <td style={{ padding: '.5rem .45rem', borderTop: '1px solid var(--border-light)', color: 'var(--text-secondary)', maxWidth: 230, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{peer.companyName}</td>
-                    <td style={{ padding: '.5rem .45rem', borderTop: '1px solid var(--border-light)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatNpr(peer.ltp)}</td>
-                    <td style={{ padding: '.5rem .45rem', borderTop: '1px solid var(--border-light)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    <td className="is-left data-table-company" style={{ maxWidth: 230 }}>{peer.companyName}</td>
+                    <td>{formatNpr(peer.ltp)}</td>
+                    <td>
                       <strong className={(peer.percentChange ?? 0) >= 0 ? 'positive' : 'negative'}>{signed(peer.percentChange ?? 0)}%</strong>
                     </td>
-                    <td style={{ padding: '.5rem .45rem', borderTop: '1px solid var(--border-light)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatNpr(peer.turnover)}</td>
+                    <td>{formatNpr(peer.turnover)}</td>
                   </tr>
                 ))}
+                {peers.length === 0 && (
+                  <tr><td colSpan={5} className="data-table-empty">No listed peers in this sector.</td></tr>
+                )}
               </tbody>
             </table>
-          </div>
+          </TableShell>
         </div>
       )}
 

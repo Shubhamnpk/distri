@@ -70,13 +70,13 @@ const HYDRO_HEADER: Record<HydroKind, string> = {
 }
 
 /** Municipality border by palika class. Borders only (no fill) so the map
- *  underneath stays visible; the tint stays light so lines read without
- *  drowning the district. */
+ *  underneath stays visible. The 700-level shades hold against the pale
+ *  basemap and the dark district outline without shouting. */
 const MUNI_TYPE_COLOR: Record<string, string> = {
-  Mahanagarpalika: '#a78bfa',
-  Upamahanagarpalika: '#60a5fa',
-  Nagarpalika: '#22d3ee',
-  Gaunpalika: '#4ade80',
+  Mahanagarpalika: '#6d28d9',
+  Upamahanagarpalika: '#1d4ed8',
+  Nagarpalika: '#0e7490',
+  Gaunpalika: '#15803d',
 }
 /** Palikas of the ACTIVE district only. Same pattern as the province layer:
  *  one stable layer for the whole province, the active district picked out by a
@@ -88,13 +88,13 @@ function muniStyle(f: any, activeKey: string | null, selected: string | null) {
   // `fill: false` (not just fillOpacity:0) so an off-district palika has NO
   // painted area and cannot swallow clicks meant for the map beneath it.
   if (!on) return { opacity: 0, fillOpacity: 0, weight: 0, fill: false }
-  const c = MUNI_TYPE_COLOR[f?.properties?._type] ?? '#5eead4'
+  const c = MUNI_TYPE_COLOR[f?.properties?._type] ?? '#0f766e'
   const picked = selected != null && f?.properties?._muni === selected
   // Nearly-transparent fill: keeps the interior clickable without tinting the
   // map, so the palika's land use stays readable underneath.
   return picked
     ? { color: '#0b4f3e', weight: 2.4, opacity: 1, fillColor: c, fillOpacity: 0.14, fill: true }
-    : { color: c, weight: 1, opacity: 0.85, fillColor: c, fillOpacity: 0.05, fill: true }
+    : { color: c, weight: 1.25, opacity: 0.95, fillColor: c, fillOpacity: 0.06, fill: true }
 }
 
 /** Protected areas — globally visible when parks layer is on.
@@ -1023,11 +1023,11 @@ function districtStyle(f: any, district: string | null) {
   }
 }
 
-function makeDistrictEach(setDistrict: (fn: (cur: string | null) => string | null) => void, quiet = false) {
+function makeDistrictEach(onPick: (name: string) => void, quiet = false) {
   return (f: any, l: any) => {
     const name: string = f?.properties?._district ?? f?.properties?.name ?? ''
     if (!quiet) l.bindTooltip(name, { sticky: true, direction: 'top' })
-    l.on('click', () => setDistrict(cur => (cur === name ? null : name)))
+    l.on('click', () => onPick(name))
   }
 }
 
@@ -1098,8 +1098,8 @@ export function NationalMap() {
   const [parks, setParks] = useState<LocalMunicipality[]>([])
   const [allParks, setAllParks] = useState<LocalMunicipality[]>([])
   const [munisLoading, setMunisLoading] = useState(false)
-  // The map opens quiet: only the live weather stations and the civic capital markers.
-  const [layers, setLayers] = useState<Layers>({ projects: false, hydro: false, quakes: false, quakesPast: false, weather: true, incidents: false, parks: false, roads: true, rain: false, pm25: false, rivers: false, capitals: true })
+  // Weather and roads stay off on open; their data is prefetched like the rest.
+  const [layers, setLayers] = useState<Layers>({ projects: false, hydro: false, quakes: false, quakesPast: false, weather: false, incidents: false, parks: false, roads: false, rain: false, pm25: false, rivers: false, capitals: true })
   const [parkSel, setParkSel] = useState<LocalMunicipality | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
@@ -1112,6 +1112,12 @@ export function NationalMap() {
   const [basemap, setBasemap] = useState<BasemapKey>('osm')
   const skipNextRegionFit = useRef(false)
   const autoZoomPending = useRef(false)
+  const [districtQuiet, setDistrictQuiet] = useState(false)
+  // The district/palika GeoJSON handlers are created when their layer mounts,
+  // long before a zoom quietly selects a district, so the click handler reads
+  // the quiet flag through a ref instead of a stale render closure.
+  const districtQuietRef = useRef(false)
+  useEffect(() => { districtQuietRef.current = districtQuiet }, [districtQuiet])
   const [isBasemapMenuOpen, setIsBasemapMenuOpen] = useState(false)
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
   const [isLegendOpen, setIsLegendOpen] = useState(false)
@@ -1191,7 +1197,7 @@ export function NationalMap() {
         else if (quakeSel) setQuakeSel(null)
         else if (parkSel) setParkSel(null)
         else if (muniSel) setMuniSel(null)
-        else if (district) setDistrict(null)
+        else if (district) { setDistrict(null); setDistrictQuiet(false) }
         else if (province) selectProvince(null)
       }
     }
@@ -1587,6 +1593,7 @@ export function NationalMap() {
   const selectProvince = (p: string | null) => {
     setProvince(p)
     setDistrict(null)
+    setDistrictQuiet(false)
   }
 
   const handleMapMove = useCallback((lat: number, lng: number, z: number) => {
@@ -1612,6 +1619,7 @@ export function NationalMap() {
         skipNextRegionFit.current = true
         setProvince(null)
         setDistrict(null)
+        setDistrictQuiet(false)
       }
       return
     }
@@ -1631,12 +1639,14 @@ export function NationalMap() {
       skipNextRegionFit.current = true
       setProvince(provinceName)
       setDistrict(districtName)
+      // Zoom only drills the map down; the place card waits for a click.
+      setDistrictQuiet(districtName != null)
       setMuniSel(null)
     }
   }, [provinceGeo, province, district, districts, polyByName])
 
   const handleEmptyClick = useCallback(() => {
-    if (district) setDistrict(null)
+    if (district) { setDistrict(null); setDistrictQuiet(false) }
     else if (province) selectProvince(null)
   }, [district, province])
 
@@ -1724,6 +1734,12 @@ export function NationalMap() {
     searchRef.current?.blur()
   }
 
+  /** A click always opens the place card, even when zoom quietly pre-selected it. */
+  const pickDistrict = (name: string) => {
+    setDistrict(cur => (cur === name && !districtQuietRef.current ? null : name))
+    setDistrictQuiet(false)
+  }
+
   return (
     <>
       <div className="atlas-map">
@@ -1809,7 +1825,7 @@ export function NationalMap() {
               pane="borders"
               data={districtFeatures as any}
               style={(f: any) => districtStyle(f, district)}
-              onEachFeature={makeDistrictEach(setDistrict, washOn) as any}
+              onEachFeature={makeDistrictEach(pickDistrict, washOn) as any}
             />
           )}
           {district && muniFeatures.features.length > 0 && (
@@ -1862,7 +1878,7 @@ export function NationalMap() {
               position={[hq.lat, hq.lng]}
               icon={headquartersIcon('district')}
               pane="points"
-              eventHandlers={{ click: () => setDistrict(cur => cur === hq.district ? null : hq.district) }}
+              eventHandlers={{ click: () => pickDistrict(hq.district) }}
             >
               <Tooltip direction="top" offset={[0, -9]}>{`${hq.district} district HQ · ${hq.hq} (locality marker)`}</Tooltip>
             </Marker>
@@ -2159,7 +2175,7 @@ export function NationalMap() {
                               <button
                                 key={d.id}
                                 onClick={() => {
-                                  setDistrict(cur => (cur === d.name ? null : d.name))
+                                  pickDistrict(d.name)
                                   setIsRegionMenuOpen(false)
                                 }}
                                 style={{
@@ -3131,7 +3147,7 @@ export function NationalMap() {
         )
       })()}
 
-      {district && !muniSel && !stationSel && !hydroSel && !quakeSel && !riverSel && !rainSel && (() => {
+      {district && !districtQuiet && !muniSel && !stationSel && !hydroSel && !quakeSel && !riverSel && !rainSel && (() => {
         const d = districts.find(x => x.name === district)
         if (!d) return null
         const hq = localByName.get(normName(d.name))?.hq
@@ -3153,7 +3169,7 @@ export function NationalMap() {
                     : `${activeMunis.length > 0 ? ` · ${activeMunis.length} palikas` : ''}${activeParks.length > 0 ? ` · ${activeParks.length} protected` : ''}`}
                 </p>
               </div>
-              <button onClick={() => setDistrict(null)} aria-label="Close district" style={{ fontSize: '.8rem', fontWeight: 700 }} className="text-tertiary">✕</button>
+              <button onClick={() => { setDistrict(null); setDistrictQuiet(false) }} aria-label="Close district" style={{ fontSize: '.8rem', fontWeight: 700 }} className="text-tertiary">✕</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.4rem', marginTop: '.7rem' }}>
               {[

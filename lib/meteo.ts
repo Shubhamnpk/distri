@@ -160,6 +160,48 @@ export async function fetchCurrentPm25(place: DistrictWeather = NEPAL_DISTRICT_C
   }
 }
 
+export type ClimateSummary = {
+  start: string
+  end: string
+  days: number
+  meanTemp: number | null
+  totalPrecip: number | null
+  rainDays: number | null
+}
+
+/** Rolling 12-month climate summary from Open-Meteo's reanalysis archive.
+ *  The archive lags a few days, so end the window a week back rather than today. */
+export async function fetchClimateSummary(place: DistrictWeather): Promise<ClimateSummary | null> {
+  try {
+    const end = new Date()
+    end.setUTCDate(end.getUTCDate() - 7)
+    const start = new Date(end)
+    start.setUTCFullYear(start.getUTCFullYear() - 1)
+    start.setUTCDate(start.getUTCDate() + 1)
+    const iso = (d: Date) => d.toISOString().slice(0, 10)
+    const res = await fetch(
+      `https://archive-api.open-meteo.com/v1/archive?latitude=${place.lat}&longitude=${place.lon}&start_date=${iso(start)}&end_date=${iso(end)}&daily=temperature_2m_mean,precipitation_sum&timezone=Asia%2FKathmandu`,
+      { headers: HEADERS, next: { revalidate: 86400 } },
+    )
+    if (!res.ok) return null
+    const json = await res.json()
+    const temps: (number | null)[] = json?.daily?.temperature_2m_mean ?? []
+    const rain: (number | null)[] = json?.daily?.precipitation_sum ?? []
+    const tempsPresent = temps.filter((v): v is number => typeof v === 'number')
+    const rainPresent = rain.filter((v): v is number => typeof v === 'number')
+    return {
+      start: iso(start),
+      end: iso(end),
+      days: json?.daily?.time?.length ?? 0,
+      meanTemp: tempsPresent.length ? tempsPresent.reduce((s, v) => s + v, 0) / tempsPresent.length : null,
+      totalPrecip: rainPresent.length ? rainPresent.reduce((s, v) => s + v, 0) : null,
+      rainDays: rainPresent.length ? rainPresent.filter(v => v >= 1).length : null,
+    }
+  } catch {
+    return null
+  }
+}
+
 export type NepalQuake = {
   id: string
   place: string

@@ -1,6 +1,6 @@
-// District geography for the national atlas.
+﻿// District geography for the national atlas.
 // - Centroids + bboxes: BIPAD DRR API (tiny, keyless, verified live).
-// - Polygons: DataNepal place_boundaries.json (859 rows, ~1.5MB, keyless) —
+// - Polygons: DataNepal place_boundaries.json (859 rows, ~1.5MB, keyless) â€”
 //   geometry_geojson is a STRING per row; parsed client-side once and cached.
 // Joined by normalized district name; districts without a matched polygon
 // still work via centroid markers (never drop a district for geometry reasons).
@@ -8,6 +8,24 @@
 const HEADERS = {
   'User-Agent': 'Drishti-Nepal-Accountability-Dashboard/1.0',
   Accept: 'application/json',
+}
+
+/** The bundled boundary shards sit east of the OSM basemap (measured against
+ *  the OSM Nepal outline). Nudge every outline ~250 m west once, here, so the
+ *  correction scales with zoom instead of drifting at a single zoom level. */
+const BOUNDARY_DLON = -0.00255
+
+function shiftGeometry(geom: { coordinates?: unknown } | undefined) {
+  const walk = (c: unknown) => {
+    if (!Array.isArray(c)) return
+    if (typeof c[0] === 'number' && typeof c[1] === 'number') {
+      c[0] += BOUNDARY_DLON
+      return
+    }
+    for (const child of c) walk(child)
+  }
+  walk(geom?.coordinates)
+  return geom
 }
 
 /** fetch that gives up instead of hanging forever (stalled hosts = blank map). */
@@ -73,7 +91,7 @@ export async function fetchBipadDistricts(): Promise<BipadDistrict[]> {
         })
       }
       // `count` is a sentinel (9.2e18) on BIPAD, so `next` never goes null once the
-      // 77 real rows are exhausted — stop on a short/empty page instead.
+      // 77 real rows are exhausted â€” stop on a short/empty page instead.
       url = rows.length < 100 ? null : (json?.next ?? null)
       if (out.length > 200) break
     }
@@ -101,10 +119,10 @@ type BoundaryRow = {
 export type DistrictPolygons = {
   /** GeoJSON FeatureCollection of matched district polygons */
   geojson: { type: string; features: Record<string, unknown>[] }
-  /** district name → matched (for diagnostics) */
+  /** district name â†’ matched (for diagnostics) */
   matched: string[]
   unmatched: string[]
-  /** district name → province (from DataNepal parent's sibling rows is unreliable — caller joins via BIPAD) */
+  /** district name â†’ province (from DataNepal parent's sibling rows is unreliable â€” caller joins via BIPAD) */
   byName: Record<string, Record<string, unknown>>
 }
 
@@ -128,7 +146,7 @@ export function fetchDistrictPolygons(): Promise<DistrictPolygons> {
           try {
             const geom = JSON.parse(r.geometry_geojson) as Record<string, unknown>
             if (!geom || (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon')) continue
-            const feat = { type: 'Feature', properties: { name: r.name_en }, geometry: geom }
+            const feat = { type: 'Feature', properties: { name: r.name_en }, geometry: shiftGeometry(geom) }
             features.push(feat)
             byName[normName(r.name_en)] = feat
           } catch {
@@ -145,7 +163,7 @@ export function fetchDistrictPolygons(): Promise<DistrictPolygons> {
 }
 
 /** Fallback districts derived from bundled polygons when the API is unreachable:
- *  bbox is exact (from geometry), centroid is the bbox center — good enough
+ *  bbox is exact (from geometry), centroid is the bbox center â€” good enough
  *  for pins, zoom and filtering. Drill-down never depends on the network. */
 export function districtsFromPolygons(local: LocalDistrict[]): BipadDistrict[] {
   return local.map((d, i) => {
@@ -200,7 +218,7 @@ function titleCase(s: string): string {
 let provinceCache: Promise<{ type: string; features: Record<string, unknown>[] }> | null = null
 
 /** All 7 province outlines from the okfnepal shards
- *  (`/public/geo/provinces/<slug>.geojson`, ~300-575KB each) — same source as
+ *  (`/public/geo/provinces/<slug>.geojson`, ~300-575KB each) â€” same source as
  *  districts + municipalities, so every layer aligns. Properties normalized to
  *  `{ id: <1-7>, name: <app name> }` to match existing numeric-id consumers.
  *  Fetched once in parallel, cached. */
@@ -215,14 +233,14 @@ export function fetchProvinceShapes(): Promise<{ type: string; features: Record<
         )
         const features: Record<string, unknown>[] = []
         for (const part of parts) {
-          const feats: { properties?: { PROVINCE?: number; PR_NAME?: string }; geometry?: { type?: string } }[] = part?.features ?? []
+          const feats: { properties?: { PROVINCE?: number; PR_NAME?: string }; geometry?: { type?: string; coordinates?: unknown } }[] = part?.features ?? []
           for (const f of feats) {
             const num = Number(f?.properties?.PROVINCE)
             if (!num || (f.geometry?.type !== 'Polygon' && f.geometry?.type !== 'MultiPolygon')) continue
             features.push({
               type: 'Feature',
               properties: { id: num, name: PROVINCE_NUM_TO_NAME[num] ?? String(f.properties?.PR_NAME ?? '') },
-              geometry: f.geometry,
+              geometry: shiftGeometry(f.geometry),
             })
           }
         }
@@ -238,9 +256,9 @@ export function fetchProvinceShapes(): Promise<{ type: string; features: Record<
 let localCache: Map<number, Promise<LocalDistrict[]>> | null = null
 
 /** Municipalities (palikas) of ONE province from its bundled shard
- *  (`/public/geo/municipalities/<slug>.geojson`, 0.8–1.2MB, from
+ *  (`/public/geo/municipalities/<slug>.geojson`, 0.8â€“1.2MB, from
  *  openknowledgenp/localboundaries on GitHub). Fetched only when a district is
- *  opened, cached per province — never re-downloaded while navigating. */
+ *  opened, cached per province â€” never re-downloaded while navigating. */
 export type LocalMunicipality = {
   /** Display name, e.g. "Dudhouli" */
   name: string
@@ -253,7 +271,7 @@ export type LocalMunicipality = {
 
 // Every source spells a few districts differently (BIPAD "Chitwan" vs DataNepal
 // "Chitawan", okfnepal "MAKAWANPUR" vs "Makwanpur", ...). Canonicalize BOTH
-// sides — municipality rows and queried district names — to one key space so
+// sides â€” municipality rows and queried district names â€” to one key space so
 // a selected district always finds its palikas.
 const CANON_DISTRICT: Record<string, string> = {
   chitwan: 'chitawan',
@@ -289,7 +307,7 @@ const MUNI_PROVINCE_SLUG: Record<string, string> = {
 
 type RawLocalFeat = {
   properties?: { DISTRICT?: string; GaPa_NaPa?: string; Type_GN?: string }
-  geometry?: { type?: string }
+  geometry?: { type?: string; coordinates?: unknown }
 }
 
 const MUNI_TYPES = new Set(['Nagarpalika', 'Gaunpalika', 'Mahanagarpalika', 'Upamahanagarpalika'])
@@ -321,6 +339,7 @@ function fetchProvinceLocalRaw(slug: string): Promise<RawLocalFeat[]> {
       if (!res.ok) return []
       const json = await res.json()
       const feats: RawLocalFeat[] = json?.features ?? []
+      for (const f of feats) if (f.geometry) shiftGeometry(f.geometry)
       return feats.filter(f => f?.properties?.DISTRICT && f?.properties?.GaPa_NaPa && (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'))
     } catch {
       return []
@@ -349,7 +368,7 @@ export function fetchLocalMunicipalities(province: string): Promise<LocalMunicip
   return fetchProvinceLocalRaw(slug).then(feats => feats.filter(f => MUNI_TYPES.has(String(f.properties?.Type_GN ?? ''))).map(toLocalArea))
 }
 
-/** National parks, wildlife reserves and conservation areas (same shard —
+/** National parks, wildlife reserves and conservation areas (same shard â€”
  *  no extra download). Same LocalMunicipality shape; `type` carries the
  *  protected-area class. */
 export function fetchLocalProtected(province: string): Promise<LocalMunicipality[]> {
@@ -369,7 +388,7 @@ const OKF_PROVINCE_NUM_TO_SLUG: Record<number, string> = {
   1: 'koshi', 2: 'madhesh', 3: 'bagmati', 4: 'gandaki', 5: 'lumbini', 6: 'karnali', 7: 'sudurpashchim',
 }
 
-// Old-shard spelling (normName'd) → okfnepal spelling (normName'd), for the HQ join.
+// Old-shard spelling (normName'd) â†’ okfnepal spelling (normName'd), for the HQ join.
 const OLD_TO_OKF_DISTRICT: Record<string, string> = {
   chitwan: 'chitawan',
   kavrepalanchowk: 'kabhrepalanchok',
@@ -377,7 +396,7 @@ const OLD_TO_OKF_DISTRICT: Record<string, string> = {
 }
 
 /** Districts of ONE province. Shapes come from the okfnepal district shard
- *  (`/public/geo/districts-okf/<slug>.geojson`) — dissolved from the SAME
+ *  (`/public/geo/districts-okf/<slug>.geojson`) â€” dissolved from the SAME
  *  municipality boundaries, so district outlines always match palika fills.
  *  HQ names are joined from the legacy bundled shard (`/geo/districts/<n>`,
  *  the only source that carries HQ). Fetched only when the province is
@@ -406,11 +425,11 @@ export function fetchLocalDistricts(provinceNum: number): Promise<LocalDistrict[
           }
         }
       } catch {
-        // HQ tooltips degrade to blank — shapes still render
+        // HQ tooltips degrade to blank â€” shapes still render
       }
       if (!okfRes.ok) return []
       const json = await okfRes.json()
-      const feats: { properties?: { DISTRICT?: string; STATE_CODE?: number }; geometry?: { type?: string } }[] =
+      const feats: { properties?: { DISTRICT?: string; STATE_CODE?: number }; geometry?: { type?: string; coordinates?: unknown } }[] =
         json?.features ?? []
       return feats
         .filter(f => f?.properties?.DISTRICT && (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'))
@@ -420,7 +439,7 @@ export function fetchLocalDistricts(provinceNum: number): Promise<LocalDistrict[
             name: titleCase(String(f.properties!.DISTRICT)),
             hq: hqByNorm[key] ?? '',
             province: PROVINCE_NUM_TO_NAME[Number(f.properties!.STATE_CODE)] ?? PROVINCE_NUM_TO_NAME[provinceNum] ?? '',
-            feature: { type: 'Feature', properties: { name: titleCase(String(f.properties!.DISTRICT)) }, geometry: f.geometry },
+            feature: { type: 'Feature', properties: { name: titleCase(String(f.properties!.DISTRICT)) }, geometry: shiftGeometry(f.geometry) },
           }
         })
         .filter(d => d.name && d.province)
@@ -431,3 +450,4 @@ export function fetchLocalDistricts(provinceNum: number): Promise<LocalDistrict[
   localCache.set(provinceNum, p)
   return p
 }
+
