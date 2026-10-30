@@ -20,7 +20,8 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import { LineChart } from '@/components/charts'
-import { TableShell } from '@/components/data-table'
+import { DataTable, useTableSort, type DataTableColumn } from '@/components/data-table'
+import { sortRows, type SortKind } from '@/lib/table-sort'
 import { formatNpr, formatNum } from '@/lib/currency'
 import { formatFiscalYearLabel } from '@/lib/fiscal-year'
 import { groupReportsByFy } from '@/lib/nepse'
@@ -68,6 +69,23 @@ const PERIODS = [
 
 type RangeKey = (typeof RANGES)[number]['key']
 type DataTab = 'financials' | 'dividends' | 'floor' | 'news'
+type PeerSortKey = 'symbol' | 'company' | 'ltp' | 'change' | 'turnover'
+
+const PEER_SORT_KINDS: Record<PeerSortKey, SortKind> = {
+  symbol: 'text',
+  company: 'text',
+  ltp: 'number',
+  change: 'number',
+  turnover: 'number',
+}
+
+const PEER_SORT_ACCESSORS: Record<PeerSortKey, (stock: NepseStock) => string | number | null | undefined> = {
+  symbol: stock => stock.symbol,
+  company: stock => stock.companyName,
+  ltp: stock => stock.ltp,
+  change: stock => stock.percentChange,
+  turnover: stock => stock.turnover,
+}
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -216,6 +234,7 @@ export function StockDetail({ stock, sector, history, peers, profile, rank, fina
   const [aboutOpen, setAboutOpen] = useState(false)
   const [focusPrice, setFocusPrice] = useState<number | null>(null)
   const [openFys, setOpenFys] = useState<Set<string>>(() => new Set())
+  const { sort: peerSort, toggleSort: togglePeerSort } = useTableSort<PeerSortKey>({ key: 'turnover', dir: -1 }, PEER_SORT_KINDS)
   const latest = history[history.length - 1] ?? null
   const price = stock.ltp > 0 ? stock.ltp : (latest?.close ?? 0)
   const previousClose = stock.open > 0 ? stock.open : (history.length > 1 ? history[history.length - 2].close : price)
@@ -257,6 +276,23 @@ export function StockDetail({ stock, sector, history, peers, profile, rank, fina
     || `${stock.companyName} is listed in the ${sectorLabel(sector)} group on NEPSE.${profile?.address ? ` Its corporate office is at ${profile.address}.` : ''}${profile?.contact_person ? ` The exchange profile names ${profile.contact_person} as the contact person.` : ''}`
   const latestDividend = dividends[0] ?? null
   const fyGroups = [...groupReportsByFy(reports)].reverse()
+  const sortedPeers = sortRows(peers, peerSort, PEER_SORT_ACCESSORS)
+  const peerColumns: DataTableColumn<NepseStock, PeerSortKey>[] = [
+    {
+      key: 'symbol', label: 'Symbol', align: 'left',
+      render: peer => <Link href={`/market/${peer.symbol}`} className="market-symbol-link" style={{ fontWeight: 700 }}>{peer.symbol}</Link>,
+    },
+    {
+      key: 'company', label: 'Company', align: 'left', className: 'data-table-company',
+      render: peer => peer.companyName,
+    },
+    { key: 'ltp', label: 'LTP', render: peer => formatNpr(peer.ltp) },
+    {
+      key: 'change', label: 'Change',
+      render: peer => <strong className={(peer.percentChange ?? 0) >= 0 ? 'positive' : 'negative'}>{signed(peer.percentChange ?? 0)}%</strong>,
+    },
+    { key: 'turnover', label: 'Turnover', render: peer => formatNpr(peer.turnover) },
+  ]
 
   useEffect(() => {
     const latestFy = fyGroups[0]?.fy
@@ -718,37 +754,16 @@ export function StockDetail({ stock, sector, history, peers, profile, rank, fina
             </div>
             <Layers size={16} style={{ color: 'var(--text-tertiary)' }} />
           </div>
-          <TableShell minWidth={520} className="stock-peer-table">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th scope="col" className="data-table-th is-left">Symbol</th>
-                  <th scope="col" className="data-table-th is-left">Company</th>
-                  <th scope="col" className="data-table-th is-right">LTP</th>
-                  <th scope="col" className="data-table-th is-right">Change</th>
-                  <th scope="col" className="data-table-th is-right">Turnover</th>
-                </tr>
-              </thead>
-              <tbody>
-                {peers.map(peer => (
-                  <tr key={peer.symbol}>
-                    <td className="is-left" style={{ fontWeight: 700 }}>
-                      <Link href={`/market/${peer.symbol}`} className="market-symbol-link">{peer.symbol}</Link>
-                    </td>
-                    <td className="is-left data-table-company" style={{ maxWidth: 230 }}>{peer.companyName}</td>
-                    <td>{formatNpr(peer.ltp)}</td>
-                    <td>
-                      <strong className={(peer.percentChange ?? 0) >= 0 ? 'positive' : 'negative'}>{signed(peer.percentChange ?? 0)}%</strong>
-                    </td>
-                    <td>{formatNpr(peer.turnover)}</td>
-                  </tr>
-                ))}
-                {peers.length === 0 && (
-                  <tr><td colSpan={5} className="data-table-empty">No listed peers in this sector.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </TableShell>
+          <DataTable
+            rows={sortedPeers}
+            columns={peerColumns}
+            sort={peerSort}
+            onSort={togglePeerSort}
+            rowKey={peer => peer.symbol}
+            minWidth={520}
+            className="stock-peer-table"
+            empty="No listed peers in this sector."
+          />
         </div>
       )}
 

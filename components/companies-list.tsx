@@ -160,8 +160,6 @@ function CompaniesContent({ latestFinancials, nepseRanks }: { latestFinancials: 
       </div>
 
       <section className="full-panel panel">
-        <NepseTicker />
-
         <div style={{ display: 'flex', gap: '.75rem', alignItems: 'center', flexWrap: 'wrap', marginTop: '.75rem' }}>
           <label className="search" style={{ maxWidth: '280px' }}>
             <Search size={16} />

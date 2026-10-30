@@ -14,7 +14,9 @@ import type {
   NepseFloorSheetTrade,
 } from './types'
 
-const BASE_URL = 'https://shubhamnpk.github.io/yonepse/data'
+// GitHub Pages can answer with an HTML error page for stale/missing shards; the raw
+// host serves the committed JSON directly and sends `Access-Control-Allow-Origin: *`.
+const BASE_URL = 'https://raw.githubusercontent.com/Shubhamnpk/yonepse/main/data'
 
 const COMMON_HEADERS = {
   'User-Agent': 'Drishti-Nepal-Accountability-Dashboard/1.0',
@@ -101,16 +103,21 @@ export async function fetchNepseIndices(): Promise<NepseIndex[]> {
   return rows
     .filter(r => r.index)
     .map(r => {
-      const close = Number(r.close ?? 0)
-      const previousClose = Number(r.previousClose ?? 0)
-      // The feed's change/perChange are unsigned magnitudes - always positive,
-      // so a down day reads as a gain. Derive both from close vs previous close.
-      const change = previousClose > 0 ? close - previousClose : Number(r.change ?? 0)
+      // This feed's field names are inverted: `close` holds the *previous*
+      // session's level and `currentValue` holds today's level (its own
+      // `change`/`perChange` always equal `currentValue - close`). Reading
+      // `close` as today flips the sign of every move, e.g. a +31.54 day
+      // showed as -31.55.
+      const feedChange = Number(r.change ?? 0)
+      const feedPct = Number(r.perChange ?? 0)
+      const previousClose = Number(r.close ?? 0)
+      const current = Number(r.currentValue ?? 0) || (previousClose > 0 ? previousClose + feedChange : 0)
+      const change = previousClose > 0 && current > 0 ? current - previousClose : feedChange
       return {
         name: String(r.index ?? ''),
-        close,
+        close: current,
         change,
-        changePct: previousClose > 0 ? (change / previousClose) * 100 : Number(r.perChange ?? 0),
+        changePct: previousClose > 0 ? (change / previousClose) * 100 : feedPct,
         previousClose,
         high: Number(r.high ?? 0),
         low: Number(r.low ?? 0),

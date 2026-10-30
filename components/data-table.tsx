@@ -74,6 +74,80 @@ export function TableShell({ children, minWidth = 760, className }: {
   )
 }
 
+export type DataTableColumn<T, K extends string> = {
+  key: K
+  label: string
+  align?: 'left' | 'right'
+  sortable?: boolean
+  className?: string
+  headClassName?: string
+  render: (row: T, index: number) => ReactNode
+}
+
+/** Shared sortable table: one place for headers, sort arrows, sticky shell and empty state. */
+export function DataTable<T, K extends string>({
+  rows, columns, sort, onSort, rowKey, minWidth = 760, empty = 'No rows to show.', showIndex = false, className, rowClassName,
+}: {
+  rows: readonly T[]
+  columns: readonly DataTableColumn<T, K>[]
+  sort: SortState<K>
+  onSort: (key: K) => void
+  rowKey: (row: T, index: number) => string
+  minWidth?: number
+  empty?: ReactNode
+  showIndex?: boolean
+  className?: string
+  rowClassName?: (row: T, index: number) => string | undefined
+}) {
+  return (
+    <TableShell minWidth={minWidth} className={className}>
+      <table className="data-table">
+        <thead>
+          <tr>
+            {showIndex && <th scope="col" className="data-table-th is-right data-table-index">#</th>}
+            {columns.map(column => column.sortable === false ? (
+              <th
+                key={column.key}
+                scope="col"
+                className={cn('data-table-th', column.align === 'left' ? 'is-left' : 'is-right', column.headClassName)}
+              >
+                {column.label}
+              </th>
+            ) : (
+              <SortableTh
+                key={column.key}
+                label={column.label}
+                column={column.key}
+                sort={sort}
+                onSort={onSort}
+                align={column.align ?? 'right'}
+                className={column.headClassName}
+              />
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={rowKey(row, index)} className={rowClassName?.(row, index)}>
+              {showIndex && <td className="data-table-index">{index + 1}</td>}
+              {columns.map(column => (
+                <td key={column.key} className={cn(column.align === 'left' ? 'is-left' : undefined, column.className)}>
+                  {column.render(row, index)}
+                </td>
+              ))}
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={columns.length + (showIndex ? 1 : 0)} className="data-table-empty">{empty}</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </TableShell>
+  )
+}
+
 export function SortableTh<K extends string>({ label, column, sort, onSort, align = 'right', className }: {
   label: string
   column: K

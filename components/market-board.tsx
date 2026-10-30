@@ -17,7 +17,7 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import { LineChart } from '@/components/charts'
-import { SortableTh, TableShell, useTableSort } from '@/components/data-table'
+import { DataTable, useTableSort, type DataTableColumn } from '@/components/data-table'
 import { formatNpr, formatNum } from '@/lib/currency'
 import { sortRows, type SortKind } from '@/lib/table-sort'
 import type { NepseIndex, NepseMarketSummary, NepseStock, NepseDividendRecord, NepseDisclosure } from '@/lib/types'
@@ -41,13 +41,14 @@ type Props = {
 }
 
 type Row = NepseStock & { sector: string }
-type SortKey = 'symbol' | 'sector' | 'ltp' | 'change' | 'volume' | 'turnover' | 'cap' | 'trades'
+type SortKey = 'symbol' | 'company' | 'sector' | 'ltp' | 'change' | 'volume' | 'turnover' | 'cap' | 'trades'
 type SizeKey = 'turnover' | 'marketCap'
 type HeatMode = 'sector' | 'mixed'
 type IndexRangeKey = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y'
 
 const SORT_KINDS: Record<SortKey, SortKind> = {
   symbol: 'text',
+  company: 'text',
   sector: 'text',
   ltp: 'number',
   change: 'number',
@@ -59,6 +60,7 @@ const SORT_KINDS: Record<SortKey, SortKind> = {
 
 const SORT_ACCESSORS: Record<SortKey, (row: Row) => string | number | null | undefined> = {
   symbol: row => row.symbol,
+  company: row => row.companyName,
   sector: row => row.sector,
   ltp: row => row.ltp,
   change: row => row.percentChange,
@@ -436,6 +438,39 @@ export function MarketBoard({
   }, [rows, tableSector, query, sort])
 
   const visible = showAll ? ranked : ranked.slice(0, 60)
+
+  const tableColumns: DataTableColumn<Row, SortKey>[] = [
+    {
+      key: 'symbol', label: 'Symbol', align: 'left',
+      render: stock => <Link href={`/market/${stock.symbol}`} className="market-symbol-link" style={{ fontWeight: 700 }}>{stock.symbol}</Link>,
+    },
+    {
+      key: 'company', label: 'Company', align: 'left', className: 'data-table-company',
+      render: stock => <Link href={`/market/${stock.symbol}`} className="market-company-link">{stock.companyName}</Link>,
+    },
+    {
+      key: 'sector', label: 'Sector', align: 'left',
+      render: stock => <Link href={`/market/sector/${encodeURIComponent(stock.sector)}`} className="market-sector-link">{sectorLabel(stock.sector)}</Link>,
+    },
+    { key: 'ltp', label: 'LTP', render: stock => <span style={{ fontWeight: 600 }}>{formatNpr(stock.ltp)}</span> },
+    {
+      key: 'change', label: 'Change',
+      render: stock => {
+        const pct = stock.percentChange ?? 0
+        const point = stock.open > 0 ? stock.ltp - stock.open : 0
+        return (
+          <>
+            <strong className={pct >= 0 ? 'positive' : 'negative'}>{signed(pct)}%</strong>
+            <span className="data-table-sub">{signed(point)}</span>
+          </>
+        )
+      },
+    },
+    { key: 'volume', label: 'Volume', render: stock => stock.volume ? formatNum(stock.volume) : '—' },
+    { key: 'turnover', label: 'Turnover', render: stock => stock.turnover ? formatNpr(stock.turnover) : '—' },
+    { key: 'cap', label: 'Market cap', render: stock => stock.marketCap ? formatNpr(stock.marketCap) : '—' },
+    { key: 'trades', label: 'Trades', render: stock => stock.trades ? formatNum(stock.trades) : '—' },
+  ]
 
   const maxMove = Math.max(1, ...topGainers.slice(0, 6).map(stock => Math.abs(stock.percentChange ?? 0)), ...topLosers.slice(0, 6).map(stock => Math.abs(stock.percentChange ?? 0)))
   const historyMax = Math.max(1, ...history.map(day => day.turnover))
@@ -895,59 +930,17 @@ export function MarketBoard({
           </div>
         </div>
 
-        <TableShell minWidth={860}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th scope="col" className="data-table-th is-right data-table-index">#</th>
-                <SortableTh label="Symbol" column="symbol" sort={sort} onSort={toggleSort} align="left" />
-                <th scope="col" className="data-table-th is-left">Company</th>
-                <SortableTh label="Sector" column="sector" sort={sort} onSort={toggleSort} align="left" />
-                <SortableTh label="LTP" column="ltp" sort={sort} onSort={toggleSort} />
-                <SortableTh label="Change" column="change" sort={sort} onSort={toggleSort} />
-                <SortableTh label="Volume" column="volume" sort={sort} onSort={toggleSort} />
-                <SortableTh label="Turnover" column="turnover" sort={sort} onSort={toggleSort} />
-                <SortableTh label="Market cap" column="cap" sort={sort} onSort={toggleSort} />
-                <SortableTh label="Trades" column="trades" sort={sort} onSort={toggleSort} />
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((stock, index) => {
-                const pct = stock.percentChange ?? 0
-                const point = stock.open > 0 ? stock.ltp - stock.open : 0
-                const up = pct >= 0
-                return (
-                  <tr key={stock.symbol} className="market-row">
-                    <td className="data-table-index">{index + 1}</td>
-                    <td className="is-left" style={{ fontWeight: 700 }}>
-                      <Link href={`/market/${stock.symbol}`} className="market-symbol-link">{stock.symbol}</Link>
-                    </td>
-                    <td className="is-left data-table-company">
-                      <Link href={`/market/${stock.symbol}`} className="market-company-link">{stock.companyName}</Link>
-                    </td>
-                    <td className="is-left">
-                      <Link href={`/market/sector/${encodeURIComponent(stock.sector)}`} style={{ fontSize: '.56rem', padding: '.12rem .4rem', borderRadius: 999, background: 'var(--bg-sunken)', color: 'var(--text-secondary)', textDecoration: 'none' }}>{sectorLabel(stock.sector)}</Link>
-                    </td>
-                    <td style={{ fontWeight: 600 }}>{formatNpr(stock.ltp)}</td>
-                    <td>
-                      <strong className={up ? 'positive' : 'negative'}>{signed(pct)}%</strong>
-                      <span style={{ display: 'block', fontSize: '.56rem', color: 'var(--text-tertiary)' }}>{signed(point)}</span>
-                    </td>
-                    <td>{stock.volume ? formatNum(stock.volume) : '—'}</td>
-                    <td>{stock.turnover ? formatNpr(stock.turnover) : '—'}</td>
-                    <td>{stock.marketCap ? formatNpr(stock.marketCap) : '—'}</td>
-                    <td>{stock.trades ? formatNum(stock.trades) : '—'}</td>
-                  </tr>
-                )
-              })}
-              {visible.length === 0 && (
-                <tr>
-                  <td colSpan={10} className="data-table-empty">No securities match this filter.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </TableShell>
+        <DataTable
+          rows={visible}
+          columns={tableColumns}
+          sort={sort}
+          onSort={toggleSort}
+          rowKey={stock => stock.symbol}
+          rowClassName={() => 'market-row'}
+          minWidth={860}
+          showIndex
+          empty="No securities match this filter."
+        />
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap', marginTop: '.7rem', fontSize: '.62rem', color: 'var(--text-tertiary)' }}>
           <span>

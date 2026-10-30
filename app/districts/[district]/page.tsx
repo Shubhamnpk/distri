@@ -88,7 +88,7 @@ export default function DistrictPage() {
       <main className="content-wrap">
         <p className="eyebrow">Not found</p>
         <h1>District not found</h1>
-        <p className="muted">There is no district at â€œ{slug}â€. <Link href="/places" className="text-accent">Browse all places</Link>.</p>
+        <p className="muted">There is no district at “{slug}”. <Link href="/places" className="text-accent">Browse all places</Link>.</p>
       </main>
     )
   }
@@ -134,7 +134,7 @@ export default function DistrictPage() {
 
       <section className="place-hero">
         <div className="place-hero-copy">
-          <p className="eyebrow">{province} Province Â· District</p>
+          <p className="eyebrow">{province} Province · District</p>
           <h1>{district.name}</h1>
           {area?.nameNe && <p className="place-ne">{area.nameNe}</p>}
           <p className="lede">
@@ -143,10 +143,10 @@ export default function DistrictPage() {
               : `Census, weather and places around ${district.name}.`}
           </p>
           <div className="place-hero-tags">
-            {area?.areaSqKm != null && <span className="place-tag">{Math.round(area.areaSqKm).toLocaleString('en-IN')} kmÂ²</span>}
+            {area?.areaSqKm != null && <span className="place-tag">{Math.round(area.areaSqKm).toLocaleString('en-IN')} km²</span>}
             <span className="place-tag">{palikas.length} local units</span>
             {profile && <span className="place-tag">Census {profile.censusYear}</span>}
-            {coords && <span className="place-tag"><MapPin size={12} /> {coords.lat.toFixed(2)}Â°N, {coords.lon.toFixed(2)}Â°E</span>}
+            {coords && <span className="place-tag"><MapPin size={12} /> {coords.lat.toFixed(2)}°N, {coords.lon.toFixed(2)}°E</span>}
           </div>
         </div>
         {wiki?.image && (
@@ -158,10 +158,10 @@ export default function DistrictPage() {
       </section>
 
       <section className="place-stats">
-        <Stat icon={<Users size={15} />} label="Population" value={profile ? nf.format(profile.population) : 'â€”'} note={profile ? `${profile.units} palikas summed` : 'census 2021'} />
-        <Stat icon={<Home size={15} />} label="Households" value={profile ? nf.format(profile.households) : 'â€”'} note={avgHousehold ? `${avgHousehold.toFixed(1)} people / home` : ''} />
-        <Stat icon={<GraduationCap size={15} />} label="Literacy" value={profile?.literacy != null ? `${profile.literacy.toFixed(1)}%` : 'â€”'} note="age 5+" />
-        <Stat icon={<Mountain size={15} />} label="Area" value={area?.areaSqKm != null ? `${Math.round(area.areaSqKm).toLocaleString('en-IN')} kmÂ²` : 'â€”'} note={`${palikas.length} local units`} />
+        <Stat icon={<Users size={15} />} label="Population" value={profile ? nf.format(profile.population) : '—'} note={profile ? `${profile.units} palikas summed` : 'census 2021'} />
+        <Stat icon={<Home size={15} />} label="Households" value={profile ? nf.format(profile.households) : '—'} note={avgHousehold ? `${avgHousehold.toFixed(1)} people / home` : ''} />
+        <Stat icon={<GraduationCap size={15} />} label="Literacy" value={profile?.literacy != null ? `${profile.literacy.toFixed(1)}%` : '—'} note="age 5+" />
+        <Stat icon={<Mountain size={15} />} label="Area" value={area?.areaSqKm != null ? `${Math.round(area.areaSqKm).toLocaleString('en-IN')} km²` : '—'} note={`${palikas.length} local units`} />
       </section>
 
       <div className="place-two">
@@ -173,7 +173,7 @@ export default function DistrictPage() {
               <a href={wiki.url} target="_blank" rel="noreferrer" className="text-button">Read on Wikipedia <ExternalLink size={13} /></a>
             </>
           ) : (
-            <p className="muted">{loading ? 'Loading summaryâ€¦' : 'No Wikipedia summary available for this district.'}</p>
+            <p className="muted">{loading ? 'Loading summary…' : 'No Wikipedia summary available for this district.'}</p>
           )}
         </section>
 
@@ -184,11 +184,11 @@ export default function DistrictPage() {
               <div className="place-wx-now">
                 <span className="wx-halo"><WeatherIcon kind={skyKind(condition)} size={62} /></span>
                 <div>
-                  <strong>{weather.temperature_2m != null ? `${Math.round(weather.temperature_2m)}Â°C` : 'â€”'}</strong>
+                  <strong>{weather.temperature_2m != null ? `${Math.round(weather.temperature_2m)}°C` : '—'}</strong>
                   <span>{condition}</span>
                   <small>
                     {weather.relative_humidity_2m != null ? `${Math.round(weather.relative_humidity_2m)}% humidity` : ''}
-                    {pm != null ? ` Â· PM2.5 ${pm.toFixed(1)} Âµg/mÂ³` : ''}
+                    {pm != null ? ` · PM2.5 ${pm.toFixed(1)} µg/m³` : ''}
                   </small>
                 </div>
                 {pmBand && <span className={`status-badge ${pmBand.cls}`}><span className="status-dot" />{pmBand.label}</span>}
@@ -199,8 +199,8 @@ export default function DistrictPage() {
                     <div key={d.date} className="forecast-day">
                       <span>{i === 0 ? 'Today' : new Date(d.date).toLocaleDateString('en-GB', { weekday: 'short' })}</span>
                       <WeatherIcon kind={skyKind(wmoText(d.code))} size={26} />
-                      <b>{d.max != null ? `${Math.round(d.max)}Â°` : 'â€”'}</b>
-                      <small>{d.min != null ? `${Math.round(d.min)}Â°` : 'â€”'}</small>
+                      <b>{d.max != null ? `${Math.round(d.max)}°` : '—'}</b>
+                      <small>{d.min != null ? `${Math.round(d.min)}°` : '—'}</small>
                       {d.rainChance != null && <small>{d.rainChance}% rain</small>}
                     </div>
                   ))}
@@ -208,7 +208,7 @@ export default function DistrictPage() {
               )}
             </>
           ) : (
-            <p className="muted">{loading ? 'Loading weatherâ€¦' : 'Weather unavailable right now.'}</p>
+            <p className="muted">{loading ? 'Loading weather…' : 'Weather unavailable right now.'}</p>
           )}
         </section>
       </div>
@@ -320,7 +320,7 @@ export default function DistrictPage() {
       )}
 
       <p className="place-sources">
-        Sources: NSO Census 2021 via BIPAD / NDRRMA Â· area &amp; names via DataNepal (COD) Â· weather &amp; air quality via Open-Meteo Â·
+        Sources: NSO Census 2021 via BIPAD / NDRRMA · area &amp; names via DataNepal (COD) · weather &amp; air quality via Open-Meteo ·
         text and images via Wikipedia / Wikimedia Commons.
       </p>
     </main>
@@ -329,7 +329,7 @@ export default function DistrictPage() {
 
 function excerpt(s: string): string {
   const t = s.trim()
-  return t.length > 180 ? `${t.slice(0, 177)}â€¦` : t
+  return t.length > 180 ? `${t.slice(0, 177)}…` : t
 }
 
 function Stat({ icon, label, value, note }: { icon: React.ReactNode; label: string; value: string; note?: string }) {
