@@ -1,1 +1,1 @@
-export const SITE_URL = 'https://distrinp.vercel.app'
+export const SITE_URL = 'https://drishtinp.vercel.app'
