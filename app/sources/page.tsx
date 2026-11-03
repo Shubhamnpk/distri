@@ -20,7 +20,7 @@ export default function SourcesPage() {
         <div className="section-heading">
           <div>
             <p className="eyebrow">EVIDENCE FIRST</p>
-            <h2>Public source registry</h2>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.8rem, 3.5vw, 2.8rem)', fontWeight: 500, letterSpacing: '-.04em', margin: '.3rem 0 .4rem', lineHeight: 1.05 }}>Nepal public source registry</h1>
           </div>
         </div>
         <p className="section-intro">These are the official public sources we can index. A source being listed does not mean every document is machine-readable or current.</p>

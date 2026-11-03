@@ -138,7 +138,7 @@ export default function HomePage() {
           <h1>Where does the nation&apos;s money go?</h1>
           <p className="lede">
             Drishti follows every rupee through Nepal&apos;s government-owned companies and public
-            infrastructure - from annual reports to live markets, weather to tremors.
+            infrastructure - from annual reports to live markets, weather to Earthquake.
           </p>
           <div className="hero-cta">
             <Link href="/companies" className="cta-primary">Explore companies <ArrowRight size={15} /></Link>
@@ -148,7 +148,7 @@ export default function HomePage() {
             <span className="live-dot" />
             <strong>{nptTime12(now)} NPT</strong>
             <span>·</span>
-            <span>Last indexed 26 Aug 2026</span>
+            <span>Source publication dates are shown on the registry</span>
             <span>·</span>
             <span>Official sources indexed · tape figures are live where marked</span>
           </div>
@@ -279,7 +279,7 @@ export default function HomePage() {
             <strong>{live.temp != null ? `${live.temp.toFixed(1)}°C` : '-'}</strong>
             <span>{live.pm25 != null ? `PM2.5 ${live.pm25.toFixed(1)} µg/m³` : 'Reading sensors…'}</span>
           </div>
-          <p className="muted">Monsoon floods and winter smog move budgets. Weather, air and tremors sit beside every project.</p>
+          <p className="muted">Monsoon floods and winter smog move budgets. Weather, air and Earthquake sit beside every project.</p>
         </article>
 
         <article className="panel">

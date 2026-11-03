@@ -19,10 +19,11 @@ export async function generateMetadata({ params }: { params: Promise<{ symbol: s
   const symbol = (await params).symbol.toUpperCase()
   const stocks = await fetchNepseStocks()
   const stock = stocks.find(item => item.symbol.toUpperCase() === symbol)
-  if (!stock) return { title: 'Stock not found - Drishti' }
+  if (!stock) return { title: 'Stock not found' }
   return {
-    title: `${stock.symbol} · ${stock.companyName} - Drishti`,
+    title: `${stock.symbol} ${stock.companyName} NEPSE share price`,
     description: `${stock.companyName} (${stock.symbol}) on NEPSE: ${formatNprOrNA(formatNpr(stock.ltp))}, ${stock.percentChange >= 0 ? '+' : ''}${stock.percentChange.toFixed(2)}% today. Price history, 52-week range, volume and sector peers.`,
+    alternates: { canonical: `/market/${stock.symbol.toUpperCase()}` },
   }
 }
 

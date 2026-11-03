@@ -113,6 +113,14 @@ export function Header() {
         >
           Home
         </Link>
+        <Link
+          href="/about"
+          className={isActive('/about') ? 'nav-link active' : 'nav-link'}
+          aria-current={isActive('/about') ? 'page' : undefined}
+          onClick={() => { setOpenMenu(null); setMobileNav(false) }}
+        >
+          About
+        </Link>
         {navGroups.map(group => {
           const active = group.items.some(item => isActive(item.href))
           const open = openMenu === group.label

@@ -15,10 +15,11 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const project = findProjectBySlug(slug)
-  if (!project) return { title: 'Project not found - Drishti' }
+  if (!project) return { title: 'Project not found' }
   return {
-    title: `${project.name} - Drishti`,
+    title: `${project.name} progress and budget`,
     description: project.description?.slice(0, 150),
+    alternates: { canonical: `/projects/${slug}` },
   }
 }
 

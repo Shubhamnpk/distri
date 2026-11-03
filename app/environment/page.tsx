@@ -222,12 +222,12 @@ export default function EnvironmentPage() {
         </article>
       </section>
 
-      {/* ── Tremors ── */}
+      {/* ── Earthquake ── */}
       <section className="panel" style={{ marginTop: '.75rem' }}>
         <div className="section-heading">
           <div>
             <p className="eyebrow">USGS · NEPAL BBOX 26-31°N</p>
-            <h2>Recent tremors</h2>
+            <h2>Recent Earthquakes</h2>
           </div>
           <span className="muted" style={{ fontSize: '.68rem' }}><Activity size={12} style={{ display: 'inline', verticalAlign: '-1px' }} /> Infra-risk context for hydropower & roads</span>
         </div>
@@ -242,10 +242,10 @@ export default function EnvironmentPage() {
             ))}
           </div>
         ) : (
-          <p className="muted" style={{ marginTop: '.75rem' }}>{loading ? 'Loading…' : 'No recent tremors in range.'}</p>
+          <p className="muted" style={{ marginTop: '.75rem' }}>{loading ? 'Loading…' : 'No recent Earthquake in range.'}</p>
         )}
         <p className="muted" style={{ marginTop: '.6rem', display: 'flex', alignItems: 'center', gap: '.3rem' }}>
-          <MapPin size={12} /> Open any city above for tremors ranked by distance.
+          <MapPin size={12} /> Open any city above for Earthquake ranked by distance.
         </p>
       </section>
       {/* ── Climate projections (NAP) ── */}
@@ -256,7 +256,7 @@ export default function EnvironmentPage() {
         <Wind size={15} style={{ color: 'var(--primary)', flexShrink: 0 }} />
         <p style={{ margin: 0, fontSize: '.62rem', color: 'var(--text-secondary)' }}>
           <strong style={{ fontSize: '.74rem', color: 'var(--text)' }}>Live feeds, refreshed hourly.</strong><br />
-          Forecast &amp; observations: DHM MFD · Incidents &amp; alerts &amp; climate projections: BIPAD/NDRRMA · Tremors: USGS FDSN · Current conditions &amp; PM2.5: Open-Meteo<br />
+          Forecast &amp; observations: DHM MFD · Incidents &amp; alerts &amp; climate projections: BIPAD/NDRRMA · Earthquake: USGS FDSN · Current conditions &amp; PM2.5: Open-Meteo<br />
           Losses, relief records and DRR budgets are on the <Link href="/disasters" className="panel-link" style={{ display: 'inline' }}>disaster ledger</Link>.
         </p>
       </div>

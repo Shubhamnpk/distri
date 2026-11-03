@@ -12,7 +12,7 @@ function routeSector(value: string): string {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { sector } = await params
   const name = routeSector(sector)
-  return { title: `${name} - NEPSE Market - Drishti`, description: `${name} constituents, breadth, session movers and turnover on the Nepal Stock Exchange.` }
+  return { title: `${name} sector on NEPSE`, description: `${name} constituents, market breadth, session movers and turnover on the Nepal Stock Exchange.` }
 }
 
 export default async function SectorPage({ params }: Props) {

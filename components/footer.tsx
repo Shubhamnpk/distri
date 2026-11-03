@@ -29,6 +29,9 @@ const liveDataLinks = [
 ]
 
 const projectLinks = [
+  { href: '/about', label: 'About Drishti' },
+  { href: '/about#ideology', label: 'Our ideology' },
+  { href: '/about#methodology', label: 'Data methodology' },
   { href: '/datasets', label: 'Open datasets' },
   { href: '/sources', label: 'Source registry' },
   { href: '/procurement', label: 'Tender archive' },

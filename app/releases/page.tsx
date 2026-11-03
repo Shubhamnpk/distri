@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 
 export const metadata: Metadata = {
-  title: 'Releases | Drishti',
+  title: 'Release history',
   description: 'Version history and release notes for Drishti, Nepal’s public data and civic intelligence platform.',
 }
 

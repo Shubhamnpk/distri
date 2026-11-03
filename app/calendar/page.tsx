@@ -276,6 +276,9 @@ export default function CalendarPage() {
 
   return (
     <div className="content-wrap">
+      <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.8rem, 3.5vw, 2.8rem)', fontWeight: 500, letterSpacing: '-.04em', margin: '0 0 .75rem', lineHeight: 1.05 }}>
+        Nepal public calendar
+      </h1>
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '.5rem', marginBottom: '.9rem' }}>
         <div style={{ display: 'flex', padding: 3 }} className="bg-card border border-line-light rounded-[20px]">
           {(['ad', 'bs'] as const).map(v => (

@@ -18,10 +18,11 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const company = findCompanyBySlug(slug)
-  if (!company) return { title: 'Company not found - Drishti' }
+  if (!company) return { title: 'Company not found' }
   return {
-    title: `${company.name} - Drishti`,
+    title: `${company.name} financial profile`,
     description: `${getCompanyCategory(company)} · ${company.operatingStatus} · ${formatNprText(company.result)} · ${formatNprText(company.note).slice(0, 140)}`,
+    alternates: { canonical: `/companies/${slug}` },
   }
 }
 

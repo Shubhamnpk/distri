@@ -43,7 +43,7 @@ const NationalMap = dynamic(() => import('@/components/national-map').then(m => 
         Loading Nepal National Atlas…
       </strong>
       <p style={{ fontSize: '0.75rem', opacity: 0.6, margin: '6px 0 0' }}>
-        Streaming projects, hydro registers, tremors and hydrological sensors
+        Streaming projects, hydro registers, Earthquake and hydrological sensors
       </p>
     </div>
   ),

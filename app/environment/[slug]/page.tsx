@@ -354,7 +354,7 @@ export default function CityDetailPage() {
 
         <article className="panel">
           <div className="panel-head">
-            <div><p className="eyebrow">NEAREST TREMORS</p><h3>Ground nearby</h3><p className="muted">USGS, ranked by distance</p></div>
+            <div><p className="eyebrow">NEAREST Earthquake</p><h3>Ground nearby</h3><p className="muted">USGS, ranked by distance</p></div>
             <Activity style={{ color: 'var(--warning)' }} size={20} />
           </div>
           {nearQuakes.length ? nearQuakes.map(q => (
@@ -365,7 +365,7 @@ export default function CityDetailPage() {
                 <p>{Math.round(q.km)} km away{q.depthKm != null ? ` · ${Math.round(q.depthKm)} km deep` : ''} · {timeAgo(q.time)}</p>
               </div>
             </a>
-          )) : <p className="muted">No tremors in range.</p>}
+          )) : <p className="muted">No Earthquake in range.</p>}
         </article>
       </section>
 
@@ -426,7 +426,7 @@ export default function CityDetailPage() {
       <div style={{ padding: '.9rem 1.1rem', background: 'var(--bg-elevated)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', gap: '.6rem', boxShadow: 'var(--shadow-sm)', marginTop: '.75rem' }}>
         <Wind size={15} style={{ color: 'var(--primary)', flexShrink: 0 }} />
         <p style={{ margin: 0, fontSize: '.62rem', color: 'var(--text-secondary)' }}>
-          Forecast &amp; observations: DHM MFD · Tremors: USGS FDSN · Current conditions &amp; PM2.5: Open-Meteo
+          Forecast &amp; observations: DHM MFD · Earthquake: USGS FDSN · Current conditions &amp; PM2.5: Open-Meteo
         </p>
       </div>
     </div>

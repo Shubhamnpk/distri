@@ -1,7 +1,14 @@
+import type { Metadata } from 'next'
 import { CompaniesList, type LatestCompanyFinancial } from '@/components/companies-list'
 import { companies } from '@/lib/data'
 import { symbolForCompany } from '@/lib/company-symbols'
 import { fetchNepseCompanyFinancials, fetchNepseStocks, latestAnnualCompanyResult } from '@/lib/nepse'
+
+export const metadata: Metadata = {
+  title: 'Nepal state owned companies and public enterprise finances',
+  description: 'Browse financial results, operating status, annual reports and listed market data for Nepal government owned companies and public enterprises.',
+  alternates: { canonical: '/companies' },
+}
 
 export default async function CompaniesPage() {
   const latestFinancials: Record<string, LatestCompanyFinancial> = {}

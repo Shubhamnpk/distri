@@ -67,14 +67,14 @@ export default function DatasetsPage() {
         <div className="section-heading">
           <div>
             <p className="eyebrow">OPEN DATA NEPAL</p>
-            <h2>Explore datasets</h2>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.8rem, 3.5vw, 2.8rem)', fontWeight: 500, letterSpacing: '-.04em', margin: '.3rem 0 .4rem', lineHeight: 1.05 }}>Nepal open data catalog</h1>
           </div>
           <span className="muted" style={{ fontSize: '.68rem' }}>
             {loading ? 'Loading...' : `${datasets.length} datasets found`}
           </span>
         </div>
         <p className="section-intro">
-          Search and browse Nepal's open data portal. Datasets cover governance, health, education, environment, finance, and more. Many are available in CSV format, some queryable via the DataStore API.
+          Search Nepal&apos;s open data portal for government, economy, health, education, agriculture, environment and infrastructure datasets. Records are published by public agencies and partner organizations; availability and formats vary by dataset. Many files are downloadable as CSV, and some datasets support the DataStore API.
         </p>
 
         <div style={{ display: 'flex', gap: '.75rem', alignItems: 'center', flexWrap: 'wrap', marginTop: '.75rem' }}>

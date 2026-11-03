@@ -2366,7 +2366,7 @@ export function NationalMap() {
           {([
             { key: 'hydro', label: 'Hydro', color: '#16a34a', count: counts.hydro },
             { key: 'projects', label: 'Projects', color: '#0d7c5f', count: counts.projects },
-            { key: 'quakes', label: 'Tremors', color: '#f59e0b', count: counts.quakes },
+            { key: 'quakes', label: 'Earthquake', color: '#f59e0b', count: counts.quakes },
             { key: 'quakesPast', label: 'History', color: '#b45309', count: counts.quakesPast },
             { key: 'incidents', label: 'Incidents', color: '#7c3aed', count: counts.incidents },
             { key: 'rain', label: 'Rain 24 h', color: '#0ea5e9', count: counts.rain },
@@ -3175,7 +3175,7 @@ export function NationalMap() {
               {[
                 ['Projects', nProj, '#0d7c5f'],
                 ['Hydro plants', nHydro, '#16a34a'],
-                ['Tremors', nQuake, '#f59e0b'],
+                ['Earthquake', nQuake, '#f59e0b'],
                 ['Incidents', nInc, '#7c3aed'],
               ].map(([label, n, c]) => (
                 <div key={label as string} style={{ padding: '.5rem .6rem' }} className="bg-sunken rounded-[8px]">
@@ -3255,7 +3255,7 @@ export function NationalMap() {
                 { key: 'rain', color: '#0ea5e9', label: 'Rain 24 h' },
                 { key: 'pm25', color: '#7e22ce', label: 'Air PM2.5' },
                 { key: 'rivers', color: '#dc2626', label: 'River Level' },
-                { key: 'quakes', color: '#f59e0b', label: 'Tremors' },
+                { key: 'quakes', color: '#f59e0b', label: 'Earthquake' },
                 { key: 'quakesPast', color: '#b45309', label: 'Historic EQ' },
                 { key: 'incidents', color: '#7c3aed', label: 'Incidents' },
                 { key: 'weather', color: '#2563eb', label: 'Weather Stn' },

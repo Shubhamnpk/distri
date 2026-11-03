@@ -6,8 +6,9 @@ import { fetchOcdsTenders, summarizeOcds } from '@/lib/ocds'
 import { NPR_SYMBOL } from '@/lib/currency'
 
 export const metadata = {
-  title: 'Procurement Archive - Drishti',
+  title: 'Nepal government procurement archive',
   description: 'Searchable archive of Nepal government tender records from the e-GP system (OCDS mirror).',
+  alternates: { canonical: '/procurement' },
 }
 
 export default async function ProcurementPage() {
