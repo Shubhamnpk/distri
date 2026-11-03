@@ -1,1 +1,1 @@
-export const SITE_URL = (process.env.NEXT_PUBLIC_BASE_URL || 'https://distri-eight.vercel.app').replace(/\/$/, '')
+export const SITE_URL = 'https://distrinp.vercel.app'
