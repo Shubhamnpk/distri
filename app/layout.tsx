@@ -19,6 +19,9 @@ export const metadata: Metadata = {
   description: 'Explore Nepal public data in one place: government company finances, infrastructure progress, NEPSE, procurement, weather, disasters and official source records.',
   applicationName: 'Drishti',
   category: 'public data',
+  verification: {
+    google: 'EFpFXOWm0uDbsHZn9Zx68YEIj2kVVUUNQ_idK3tzPr0',
+  },
   openGraph: {
     type: 'website',
     locale: 'en_NP',
