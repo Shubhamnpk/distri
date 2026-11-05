@@ -29,6 +29,9 @@ import { fetchDhmForecast } from '@/lib/dhm'
 import { fetchBipadIncidents, fetchBipadRainStationsAll, fetchBipadRiverStationsAll, fetchBipadDistrictProfile, fetchBipadDistrictIds, fetchBipadQuakeRisk, fetchBipadRoadBlocks, fetchBipadPalikaCensus, fetchBipadHazards, fetchBipadIncidentDetail, fetchBipadLoss, fetchBipadIncidentPlace, type PalikaCensus } from '@/lib/bipad'
 import type { BipadIncident, BipadStation, DistrictProfile, BipadQuakeRisk, BipadRoadBlock, BipadHazard, BipadIncidentDetail, BipadLoss, BipadIncidentPlace } from '@/lib/bipad'
 import { useTheme } from '@/components/theme-provider'
+import { NationalMap3D, type Atlas3DFeature } from '@/components/national-map-3d'
+import type { Map as MapLibreMap } from 'maplibre-gl'
+import 'maplibre-gl/dist/maplibre-gl.css'
 
 const PROVINCES = ['Koshi', 'Madhesh', 'Bagmati', 'Gandaki', 'Lumbini', 'Karnali', 'Sudurpashchim'] as const
 
@@ -803,7 +806,7 @@ function MapInstanceBridge({
   onZoom,
   autoZoomPending,
 }: {
-  onMapReady: (map: L.Map) => void
+  onMapReady: (map: L.Map | null) => void
   onMove: (lat: number, lng: number, zoom: number) => void
   onZoom: (lat: number, lng: number, zoom: number) => void
   autoZoomPending: { current: boolean }
@@ -872,6 +875,7 @@ function MapInstanceBridge({
       container.removeEventListener('keydown', handleKeyDown)
       window.clearTimeout(zoomIntentTimer)
       autoZoomPending.current = false
+      onMapReadyRef.current(null)
     }
   }, [map, autoZoomPending])
   return null
@@ -1109,7 +1113,9 @@ export function NationalMap() {
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null)
   const [zoomLevel, setZoomLevel] = useState(7)
   const [centerCoord, setCenterCoord] = useState<{ lat: number; lng: number }>({ lat: 28.4, lng: 84.2 })
-  const [basemap, setBasemap] = useState<BasemapKey>('osm')
+  const [basemap, setBasemap] = useState<BasemapKey>('satellite')
+  const [mapMode, setMapMode] = useState<'2d' | '3d'>('3d')
+  const map3dRef = useRef<MapLibreMap | null>(null)
   const skipNextRegionFit = useRef(false)
   const autoZoomPending = useRef(false)
   const [districtQuiet, setDistrictQuiet] = useState(false)
@@ -1165,6 +1171,7 @@ export function NationalMap() {
         setGpsLoading(false)
         // Fly to user location
         mapInstance?.flyTo([lat, lng], Math.max(13, zoomLevel), { duration: 1.2 })
+        map3dRef.current?.flyTo({ center: [lng, lat], zoom: Math.max(13, zoomLevel), duration: 1200 })
       },
       (err) => {
         setGpsLoading(false)
@@ -1480,7 +1487,7 @@ export function NationalMap() {
     })
   }, [districts])
 
-  const inScope = (lat: number | null, lon: number | null): boolean => {
+  const inScope = useCallback((lat: number | null, lon: number | null): boolean => {
     if (lat == null || lon == null) return false
     if (district) {
       const d = districts.find(x => x.name === district)
@@ -1492,7 +1499,7 @@ export function NationalMap() {
       return ds.some(d => d.bbox && lon >= d.bbox[0] && lon <= d.bbox[2] && lat >= d.bbox[1] && lat <= d.bbox[3])
     }
     return true
-  }
+  }, [district, districts, province])
 
   const visibleProjects = projectPoints.filter(x => x.lat != null && inScope(x.lat, x.lon))
   const nationalProjects = projectPoints.filter(x => x.lat == null)
@@ -1683,6 +1690,7 @@ export function NationalMap() {
     if (!layers.projects) setLayers(l => ({ ...l, projects: true }))
     if (pt.lat != null && pt.lon != null) {
       mapInstance?.flyTo([pt.lat, pt.lon], 12, { duration: 1.2 })
+      map3dRef.current?.flyTo({ center: [pt.lon, pt.lat], zoom: 12, duration: 1200 })
     }
     if (pt.district) {
       const d = districts.find(x => x.name.toLowerCase() === pt.district?.toLowerCase())
@@ -1702,6 +1710,7 @@ export function NationalMap() {
     if (!layers.hydro) setLayers(l => ({ ...l, hydro: true }))
     setHydroSel(h)
     mapInstance?.flyTo([h.lat, h.lng], 13, { duration: 1.2 })
+    map3dRef.current?.flyTo({ center: [h.lng, h.lat], zoom: 13, duration: 1200 })
     setSearchQuery('')
     setSearchFocused(false)
     searchRef.current?.blur()
@@ -1713,6 +1722,7 @@ export function NationalMap() {
     try {
       const b = L.geoJSON(p.feature as never).getBounds()
       if (b.isValid()) mapInstance?.flyToBounds(b, { padding: [40, 40], maxZoom: 13, duration: 1.2 })
+      if (b.isValid()) map3dRef.current?.fitBounds([[b.getWest(), b.getSouth()], [b.getEast(), b.getNorth()]], { padding: 60, maxZoom: 13, duration: 1200 })
     } catch {}
     setSearchQuery('')
     setSearchFocused(false)
@@ -1740,14 +1750,74 @@ export function NationalMap() {
     setDistrictQuiet(false)
   }
 
+  const asAtlasFeatures = (value: any, kind: string, selectedName?: string | null): Atlas3DFeature[] =>
+    (value?.features ?? []).map((feature: any, index: number) => {
+      const props = feature.properties ?? {}
+      const provinceName = PROVINCE_ID_TO_NAME[Number(props.id)]
+      const name = props._muni ?? props._district ?? props.name ?? props.NAME_1 ?? props.DISTRICT ?? props.district ?? provinceName ?? ''
+      return {
+        type: 'Feature', id: `${kind}-${index}`, geometry: feature.geometry ?? null,
+        properties: { ...props, kind, itemId: String(name), selected: selectedName != null && name === selectedName, color: kind === 'province' ? '#159b78' : kind === 'park' ? '#15803d' : '#64748b' },
+      }
+    })
+
+  const atlasBoundaries = useMemo<Atlas3DFeature[]>(() => [
+    ...asAtlasFeatures(provinceGeo, 'province', province),
+    ...asAtlasFeatures(districtFeatures, 'district', district),
+    ...asAtlasFeatures(muniFeatures, 'palika', muniSel?.name),
+    ...displayParks.flatMap(p => asAtlasFeatures({ features: [p.feature] }, 'park', parkSel?.name)),
+  ], [provinceGeo, province, districtFeatures, district, muniFeatures, muniSel?.name, displayParks, parkSel?.name])
+
+  const atlasPoints = useMemo<Atlas3DFeature[]>(() => {
+  const atlasPoints: Atlas3DFeature[] = []
+  const addPoint = (kind: string, id: string | number, name: string, lat: number, lng: number, color: string, size = 5) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
+    atlasPoints.push({ type: 'Feature', id: `${kind}-${id}`, geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { kind, itemId: String(id), label: name, color, size } })
+  }
+  if (layers.projects) for (const x of visibleProjects) addPoint('project', x.p.name, `${x.p.name} · ${x.p.status} · ${x.p.progress}%`, x.lat as number, x.lon as number, STATUS_COLOR[x.p.status] ?? '#0d7c5f', 5.5)
+  if (layers.hydro) for (const h of visibleHydro) addPoint('hydro', h.name, `${h.name} · ${h.mw} MW · ${h.licenseType}`, h.lat, h.lng, HYDRO_KIND_COLOR[hydroKind(h.licenseType)], Math.min(9, 4 + Math.log2(Math.max(1, h.mw))))
+  if (layers.quakes) for (const q of yearQuakes) addPoint('quake', q.id, `M${q.mag.toFixed(1)} · ${q.place}`, q.coordinates[1], q.coordinates[0], q.mag >= 4.5 ? '#dc2626' : '#f59e0b', 4 + Math.min(5, q.mag))
+  if (layers.quakesPast) for (const q of pastQuakes) addPoint('quake', q.id, `Past · M${q.mag.toFixed(1)} · ${q.place}`, q.coordinates[1], q.coordinates[0], '#b45309', 4 + Math.min(4, q.mag))
+  if (layers.weather) for (const s of visibleStations) addPoint('weather', s.id, `${s.name}${s.condition ? ` · ${s.condition}` : ''}`, s.latitude, s.longitude, '#2563eb', 5)
+  if (layers.incidents) for (const i of visibleIncidents) if (i.point) addPoint('incident', i.id, `${i.title}${i.hazard != null ? ` · ${hazards[i.hazard]?.title ?? 'Incident'}` : ''}`, i.point.coordinates[1], i.point.coordinates[0], '#7c3aed', 6)
+  if (layers.roads) for (const r of roadBlocks.filter(r => r.point && roadBlocked(r))) addPoint('road', r.id, `${r.roadRefno ?? 'Road'} · ${ROAD_STATUS[r.status ?? '']?.label ?? 'Blocked'} · ${r.location ?? r.title}`, r.point!.coordinates[1], r.point!.coordinates[0], ROAD_STATUS[r.status ?? '']?.color ?? '#dc2626', roadClosed(r) ? 7 : 5)
+  if (layers.rain) for (const g of rainHeat) { const rgb = rainColor(g.mm); addPoint('rain', g.id, `${g.name} · ${g.mm.toFixed(1)} mm / 24 h`, g.lat, g.lon, `rgb(${rgb.join(',')})`, 5 + Math.min(3, g.mm / 15)) }
+  if (layers.pm25) for (const p of pm25Heat) { const rgb = pm25Color(p.v); if (inScope(p.lat, p.lon)) addPoint('pm25', p.id, `Model PM2.5 · ${p.v.toFixed(1)} µg/m³`, p.lat, p.lon, `rgb(${rgb.join(',')})`, 4 + Math.min(4, p.v / 25)) }
+  if (layers.rivers) for (const s of visibleRivers) { const c = stationCoord(s); if (c) addPoint('river', s.id, `${s.title} · ${s.status ?? 'River station'}`, c[0], c[1], RIVER_LEVEL_COLOR[riverLevel(s)], 6) }
+  if (layers.capitals) {
+    if (!province || province === 'Bagmati') addPoint('capital', 'national', 'Kathmandu · National capital', COUNTRY_CAPITAL.lat, COUNTRY_CAPITAL.lng, '#475569', 8)
+    for (const [p, c] of Object.entries(PROVINCE_CAPITALS).filter(([p]) => !province || province === p)) addPoint('capital', `province-${p}`, `${p} capital · ${c.name}`, c.lat, c.lng, '#475569', 7)
+    for (const hq of districtHeadquarters) addPoint('capital', `district-${hq.district}`, `${hq.district} district HQ · ${hq.hq}`, hq.lat, hq.lng, '#64748b', 5)
+  }
+  return atlasPoints
+  }, [layers, projectPoints, inScope, hydro, hydroKindFilter, quakes, stations, incidents, hazards, roadBlocks, rainHeat, pm25Heat, riverStations, province, districtHeadquarters])
+
+  const selectAtlasFeature = (kind: string, id: string) => {
+    if (kind === 'province') { handleSelectProvince(id); return }
+    if (kind === 'district') { const d = districts.find(x => x.name === id); if (d) handleSelectDistrict(d); return }
+    if (kind === 'palika') { const m = muniByName.get(normName(id)); if (m) setMuniSel(m); return }
+    if (kind === 'park') { const p = displayParks.find(x => x.name === id); if (p) setParkSel(p); return }
+    if (kind === 'project') { const x = projectPoints.find(x => x.p.name === id); if (x) handleSelectProject(x); return }
+    if (kind === 'hydro') { const h = hydro.find(x => x.name === id); if (h) handleSelectHydro(h); return }
+    if (kind === 'quake') { const q = [...quakes, ...yearQuakes, ...pastQuakes].find(x => String(x.id) === id); if (q) setQuakeSel(q); return }
+    if (kind === 'weather') { const s = stations.find(x => String(x.id) === id); if (s) setStationSel(s); return }
+    if (kind === 'incident') { const i = incidents.find(x => String(x.id) === id); if (i) setIncidentSel(i); return }
+    if (kind === 'road') { const r = roadBlocks.find(x => String(x.id) === id); if (r) { setRoadSel(r); setHighwaySel(null) }; return }
+    if (kind === 'rain') { const g = rainStations.find(x => String(x.id) === id); if (g) setRainSel(g); return }
+    if (kind === 'river') { const s = riverStations.find(x => String(x.id) === id); if (s) setRiverSel(s); return }
+    if (kind === 'capital') { const name = id.replace(/^district-/, ''); if (id.startsWith('district-')) pickDistrict(name) }
+  }
+
   return (
     <>
       <div className="atlas-map">
-        <MapContainer
-          center={[28.4, 84.2] as [number, number]}
-          zoom={7}
-          minZoom={5}
-          maxZoom={18}
+        {mapMode === '3d' && <NationalMap3D basemap={basemap} center={centerCoord} zoom={zoomLevel} bounds={fit} boundaries={atlasBoundaries} points={atlasPoints} roadsVisible={layers.roads} onSelect={selectAtlasFeature} onMove={(lat, lng, zoom) => { setCenterCoord({ lat, lng }); setZoomLevel(zoom) }} onReady={map => { map3dRef.current = map }} onFallback={() => setMapMode('2d')} />}
+        {mapMode === '2d' && <MapContainer
+          center={[centerCoord.lat, centerCoord.lng] as [number, number]}
+          zoom={zoomLevel}
+          minZoom={0}
+          maxZoom={22}
+          zoomSnap={0}
           worldCopyJump={true}
           zoomControl={false}
           attributionControl={false}
@@ -2056,7 +2126,7 @@ export function NationalMap() {
               </Marker>
             )
           })}
-        </MapContainer>
+        </MapContainer>}
       </div>
 
       {/* Top Floating Control Bar */}
@@ -2071,6 +2141,11 @@ export function NationalMap() {
           >
             <ArrowLeft size={14} /> Drishti
           </Link>
+
+          <div className="atlas-view-switch" role="group" aria-label="Map dimension">
+            <button type="button" onClick={() => setMapMode('2d')} aria-pressed={mapMode === '2d'}>2D</button>
+            <button type="button" onClick={() => setMapMode('3d')} aria-pressed={mapMode === '3d'}>3D terrain</button>
+          </div>
 
           <div style={{ position: 'relative' }}>
             <button
@@ -3227,7 +3302,7 @@ export function NationalMap() {
                     </div>
                   )}
                   <p className="muted" style={{ fontSize: '.58rem', margin: '.55rem 0 0' }}>
-                    {prof ? `${prof.units} palika rows summed here — the API files census counts per palika, so this district total is computed, not published. ` : ''}
+                    {prof ? `${prof.units} palika rows summed here  ` : ''}
                     Seismic risk score is NDRRMA&apos;s own per-district ranking.
                   </p>
                 </div>
@@ -3360,10 +3435,10 @@ export function NationalMap() {
 
           {/* Zoom stack + GPS button */}
           <div className="atlas-zoom-pill">
-            <button onClick={() => { autoZoomPending.current = true; window.setTimeout(() => { autoZoomPending.current = false }, 1500); mapInstance?.zoomIn() }} className="atlas-zoom-btn" title="Zoom In (+)" aria-label="Zoom in"><Plus size={16} /></button>
+            <button onClick={() => { autoZoomPending.current = true; window.setTimeout(() => { autoZoomPending.current = false }, 1500); mapInstance?.zoomIn(); map3dRef.current?.zoomIn() }} className="atlas-zoom-btn" title="Zoom In (+)" aria-label="Zoom in"><Plus size={16} /></button>
             <div className="atlas-zoom-badge">Z{zoomLevel}</div>
-            <button onClick={() => { autoZoomPending.current = true; window.setTimeout(() => { autoZoomPending.current = false }, 1500); mapInstance?.zoomOut() }} className="atlas-zoom-btn" title="Zoom Out (−)" aria-label="Zoom out"><Minus size={16} /></button>
-            <button onClick={() => { selectProvince(null); mapInstance?.flyToBounds(NEPAL_BBOX, { padding: [40, 40], duration: 0.8 }) }} className="atlas-zoom-btn" title="Reset view" aria-label="Fit Nepal" style={{ borderTop: '1px solid var(--border-light)' }}><RotateCcw size={14} /></button>
+            <button onClick={() => { autoZoomPending.current = true; window.setTimeout(() => { autoZoomPending.current = false }, 1500); mapInstance?.zoomOut(); map3dRef.current?.zoomOut() }} className="atlas-zoom-btn" title="Zoom Out (−)" aria-label="Zoom out"><Minus size={16} /></button>
+            <button onClick={() => { selectProvince(null); mapInstance?.flyToBounds(NEPAL_BBOX, { padding: [40, 40], duration: 0.8 }); map3dRef.current?.fitBounds([[80.2, 26.2], [88.3, 30.4]], { padding: 40, duration: 800 }) }} className="atlas-zoom-btn" title="Reset view" aria-label="Fit Nepal" style={{ borderTop: '1px solid var(--border-light)' }}><RotateCcw size={14} /></button>
             <button
               onClick={locateMe}
               className={`atlas-zoom-btn${gpsPosition ? ' gps-active' : ''}`}
@@ -3435,7 +3510,7 @@ export function NationalMap() {
 
       {/* Attribution bar */}
       <div className="atlas-attribution">
-        {BASEMAPS[basemap].attribution} · Drishti v2 · BIPAD · DHM · USGS
+        {BASEMAPS[basemap].attribution} · Drishti v2 · BIPAD · DHM · USGS{mapMode === '3d' ? ' · Terrain: Mapzen / SRTM (USGS), AWS Open Data' : ''}{mapMode === '3d' && layers.roads ? ' · Roads: OpenFreeMap / OpenStreetMap' : ''}
       </div>
 
       {/* Slide-over Inspector Drawer for Hydro capacity & Projects List */}

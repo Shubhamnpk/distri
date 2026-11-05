@@ -13,6 +13,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  ReferenceDot,
 } from 'recharts'
 import { USD_SYMBOL } from '@/lib/currency'
 
@@ -190,7 +191,8 @@ export function BarChart({
 
 /* ─── LINE / AREA CHART ─── */
 export function LineChart({
-  data, color = 'var(--primary)', height = 120, formatValue, title, showArea = true, showDelta = false, yAxis = false, forecastFrom, xTicks, onHover,
+  data, color = 'var(--primary)', height = 120, formatValue, title, showArea = true, showDelta = false, yAxis = false, forecastFrom, xTicks, onHover, showForecastDots = false,
+  highlightLastColor,
 }: {
   data: DataPoint[]
   color?: string
@@ -205,6 +207,10 @@ export function LineChart({
   xTicks?: string[]
   /** Reports the hovered data point value, or null when the pointer leaves the chart. */
   onHover?: (value: number | null) => void
+  /** Show dots on forecast values, for charts where individual projections matter. */
+  showForecastDots?: boolean
+  /** Draw a distinct reference dot on the final point (for source-comparison points). */
+  highlightLastColor?: string
 }) {
   const { resolved, grid, tick } = useResolved(color)
   const format = formatValue || defaultFormat
@@ -266,8 +272,20 @@ export function LineChart({
           ) : (
             <Line type="monotone" dataKey="value" stroke={resolved} strokeWidth={2} dot={false} activeDot={{ r: 5, fill: resolved, strokeWidth: 0 }} isAnimationActive={false} />
           )}
+          {highlightLastColor && rows.length > 0 && rows[rows.length - 1].value != null && (
+            <ReferenceDot
+              x={rows[rows.length - 1].name}
+              y={rows[rows.length - 1].value as number}
+              r={4.5}
+              fill={highlightLastColor}
+              stroke={grid}
+              strokeWidth={2}
+              ifOverflow="extendDomain"
+              zIndex={700}
+            />
+          )}
           {forecastFrom != null && (
-            <Line type="monotone" dataKey="forecast" stroke={resolved} strokeWidth={2} strokeDasharray="6 4" dot={false} activeDot={{ r: 5, fill: resolved, strokeWidth: 0 }} isAnimationActive={false} />
+            <Line type="monotone" dataKey="forecast" stroke={resolved} strokeWidth={2} strokeDasharray="6 4" dot={showForecastDots ? { r: 3, fill: resolved, stroke: resolved, strokeWidth: 1 } : false} activeDot={{ r: 5, fill: resolved, strokeWidth: 0 }} isAnimationActive={false} />
           )}
         </ComposedChart>
       </ResponsiveContainer>

@@ -59,6 +59,10 @@ function signed(n: number, digits = 2): string {
   return `${n >= 0 ? '+' : ''}${n.toFixed(digits)}`
 }
 
+function formatImfGdp(valueInBillions: number): string {
+  return formatUsd(valueInBillions * 1_000_000_000)
+}
+
 type ModalData = {
   label: string
   value: string
@@ -273,6 +277,19 @@ export default function EconomyPage() {
 
   const tradeBalance = (expL?.value ?? 0) - (impL?.value ?? 0)
   const liveNprRate = data.exchangeRate.length ? (latest(data.exchangeRate)?.value ?? 133.5) : 133.5
+  const exchangeChartData = liveNrb == null
+    ? data.exchangeRate
+    : [...data.exchangeRate, { year: String(new Date().getFullYear()), label: 'NRB', value: liveNrb }]
+  const gdpForecastPoints = data.imfNominalGdp.flatMap(point => {
+    const year = Number(point.year)
+    return point.value != null && year >= FORECAST_START && year <= FORECAST_START + 1
+      ? [{ year: point.year, value: point.value * 1_000_000_000 }]
+      : []
+  })
+  const gdpHeroChart = [
+    ...data.gdp.filter(point => point.value != null && Number(point.year) < FORECAST_START),
+    ...gdpForecastPoints,
+  ].sort((a, b) => Number(a.year) - Number(b.year))
 
   const summary = market?.summary ?? null
   const headline = market?.headline ?? null
@@ -295,7 +312,7 @@ export default function EconomyPage() {
   const fmtPct = (v: number) => `${v.toFixed(1)}%`
   const outlookCards: { icon: React.ElementType; label: string; d: WbDataPoint[]; color: string; fmt: (v: number) => string; unit: string }[] = [
     { icon: TrendingUp, label: 'Real GDP growth', d: data.imfGdpGrowth, color: 'var(--primary)', fmt: fmtPct, unit: 'annual %' },
-    { icon: Globe2, label: 'GDP, nominal', d: data.imfNominalGdp, color: '#6366f1', fmt: formatUsd, unit: 'US$, current prices' },
+    { icon: Globe2, label: 'GDP, nominal', d: data.imfNominalGdp, color: '#6366f1', fmt: formatImfGdp, unit: 'US$, current prices' },
     { icon: Users, label: 'GDP per capita', d: data.imfGdpPerCapita, color: '#3b82f6', fmt: formatUsd, unit: 'US$ per person' },
     { icon: Globe2, label: 'GDP (PPP)', d: data.imfGdpPpp, color: '#8b5cf6', fmt: formatUsd, unit: 'international $, PPP' },
     { icon: Users, label: 'GDP per capita (PPP)', d: data.imfPppPerCapita, color: '#8b5cf6', fmt: formatUsd, unit: 'int$ PPP per person' },
@@ -359,7 +376,19 @@ export default function EconomyPage() {
             </div>
             <div>
               <p style={{ fontSize: '.55rem', opacity: .6, textTransform: 'uppercase', letterSpacing: '.1em', margin: '0 0 .3rem' }}>Nominal GDP · current US$</p>
-              <LineChart data={data.gdp} color="#ffffff" height={150} showArea formatValue={v => formatUsd(v)} />
+              <LineChart
+                data={gdpHeroChart}
+                color="#ffffff"
+                height={150}
+                showArea
+                showForecastDots={gdpForecastPoints.length > 0}
+                forecastFrom={gdpForecastPoints.length ? FORECAST_START : undefined}
+                formatValue={v => formatUsd(v)}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '.5rem', marginTop: '.1rem', color: 'rgba(255,255,255,.65)', fontSize: '.52rem' }}>
+                <span>World Bank actuals</span>
+                <span>{gdpForecastPoints.length ? `IMF projections · ${gdpForecastPoints.map(point => point.year).join(' · ')}` : 'IMF projections unavailable'}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -452,7 +481,20 @@ export default function EconomyPage() {
                       <span style={{ fontSize: '.6rem', color: 'var(--text-tertiary)' }}>{USD_SYMBOL}1 · {latest(data.exchangeRate)?.year}</span>
                     </div>
                     <div style={{ marginTop: '.4rem' }}>
-                      <LineChart data={data.exchangeRate} color="#e0a351" height={110} formatValue={v => formatNprRate(v)} title="Exchange rate trend" />
+                      <LineChart
+                        data={exchangeChartData}
+                        color="#e0a351"
+                        height={110}
+                        formatValue={v => formatNprRate(v)}
+                        title="Exchange rate trend"
+                        highlightLastColor={liveNrb == null ? undefined : '#0d7c5f'}
+                      />
+                      {liveNrb != null && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '.35rem', marginTop: '.15rem', color: 'var(--text-tertiary)', fontSize: '.56rem' }}>
+                          <i style={{ width: 7, height: 7, borderRadius: '50%', background: '#0d7c5f', display: 'inline-block' }} />
+                          NRB live fixing today · {formatNprRate(liveNrb)}
+                        </div>
+                      )}
                     </div>
                     {liveNrb && (
                       <div style={{ marginTop: '.4rem', padding: '.5rem .65rem', background: 'var(--primary-50)', borderRadius: 8, fontSize: '.68rem', fontWeight: 700, color: 'var(--primary)' }}>

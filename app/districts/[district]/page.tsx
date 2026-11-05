@@ -213,39 +213,55 @@ export default function DistrictPage() {
         </section>
       </div>
 
-      {sexTotal > 0 && (
-        <section className="panel place-sex">
-          <div className="panel-head"><h3>Population split</h3><span className="muted">Census {profile?.censusYear}</span></div>
-          <div className="sex-bar">
-            <span style={{ width: `${(sexMale / sexTotal) * 100}%` }} className="sex-male" />
-            <span style={{ width: `${(sexFemale / sexTotal) * 100}%` }} className="sex-female" />
-          </div>
-          <div className="sex-legend">
-            <span><i className="dot sex-male" /> Male {nf.format(sexMale)} ({(sexMale / sexTotal * 100).toFixed(1)}%)</span>
-            <span><i className="dot sex-female" /> Female {nf.format(sexFemale)} ({(sexFemale / sexTotal * 100).toFixed(1)}%)</span>
-          </div>
-        </section>
-      )}
-
-      {ageBands.length > 0 && ageMax > 0 && (
+      {(sexTotal > 0 || (ageBands.length > 0 && ageMax > 0)) && (
         <section className="panel place-age">
-          <div className="panel-head"><h3>Age structure</h3><span className="muted">Census {profile?.censusYear}</span></div>
-          <div className="age-bars">
-            {ageBands.map(b => (
-              <div key={b.band} className="age-row">
-                <span className="age-label">{b.band}</span>
-                <div className="age-track">
-                  <span className="age-male" style={{ width: `${(b.male / ageMax) * 100}%` }} />
-                  <span className="age-female" style={{ width: `${(b.female / ageMax) * 100}%` }} />
-                </div>
-                <span className="age-val">{nf.format(b.male + b.female)}</span>
+          <div className="panel-head"><h3>Age &amp; population structure</h3><span className="muted">Census {profile?.censusYear}</span></div>
+          {sexTotal > 0 && (
+            <div className="district-population-split">
+              <div className="district-population-split-head">
+                <strong>Population split</strong>
+                <span>{nf.format(sexTotal)} people</span>
               </div>
-            ))}
-          </div>
-          <div className="sex-legend">
-            <span><i className="dot sex-male" /> Male</span>
-            <span><i className="dot sex-female" /> Female</span>
-          </div>
+              <div className="sex-bar">
+                <span style={{ width: `${(sexMale / sexTotal) * 100}%` }} className="sex-male" />
+                <span style={{ width: `${(sexFemale / sexTotal) * 100}%` }} className="sex-female" />
+              </div>
+              <div className="sex-legend">
+                <span><i className="dot sex-male" /> Male {nf.format(sexMale)} ({(sexMale / sexTotal * 100).toFixed(1)}%)</span>
+                <span><i className="dot sex-female" /> Female {nf.format(sexFemale)} ({(sexFemale / sexTotal * 100).toFixed(1)}%)</span>
+              </div>
+            </div>
+          )}
+          {ageBands.length > 0 && ageMax > 0 && (
+            <div className="age-pyramid" role="group" aria-label={`District population by age band and gender, census ${profile?.censusYear ?? 'unknown'}`}>
+              <div className="age-pyramid-head">
+                <span>Male</span><span>Age band</span><span>Female</span>
+              </div>
+              {ageBands.map(b => {
+                const total = b.male + b.female
+                const maleShare = total > 0 ? (b.male / total) * 100 : 0
+                const femaleShare = total > 0 ? (b.female / total) * 100 : 0
+                return (
+                  <div key={b.band} className="age-pyramid-row">
+                    <span className="age-pyramid-side age-pyramid-left">
+                      <span className="age-pyramid-value">{nf.format(b.male)} <small>({maleShare.toFixed(1)}%)</small></span>
+                      <span className="age-pyramid-track"><span className="age-pyramid-bar age-male" style={{ width: `${(b.male / ageMax) * 100}%` }} /></span>
+                    </span>
+                    <span className="age-pyramid-label">{b.band}</span>
+                    <span className="age-pyramid-side">
+                      <span className="age-pyramid-track"><span className="age-pyramid-bar age-female" style={{ width: `${(b.female / ageMax) * 100}%` }} /></span>
+                      <span className="age-pyramid-value">{nf.format(b.female)} <small>({femaleShare.toFixed(1)}%)</small></span>
+                    </span>
+                  </div>
+                )
+              })}
+              <div className="sex-legend">
+                <span><i className="dot sex-male" /> Male</span>
+                <span><i className="dot sex-female" /> Female</span>
+                <span>Percentages are each gender&apos;s share within the age band.</span>
+              </div>
+            </div>
+          )}
         </section>
       )}
 
@@ -263,11 +279,12 @@ export default function DistrictPage() {
               center={coords}
               palikas={palikaMarkers}
               places={nearbyMarkers}
+              focus="district"
             />
           </div>
           <div className="province-map-legend">
             <span><i className="map-dot is-selected" /> {district.name} district</span>
-            <span><i className="map-dot is-district" /> Other districts</span>
+            <span><i className="map-dot is-palika" /> Local units</span>
             {palikaMarkers.length > 0 && <span><i className="map-dot is-palika" /> Local unit</span>}
             {nearbyMarkers.length > 0 && <span><i className="map-dot is-attraction" /> Nearby place</span>}
           </div>

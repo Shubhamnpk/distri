@@ -299,6 +299,8 @@ export type NearbyPlace = {
   lon: number
 }
 
+const ADMINISTRATIVE_PLACE_LEAD = /\b(?:is|was)\s+(?:a|an|the)\s+(?:former\s+)?(?:village development committee|rural municipality|municipality|metropolitan city|sub-metropolitan city|district|ward|village|town|settlement)\b/i
+
 export type ProvinceAttraction = {
   title: string
   extract: string
@@ -451,6 +453,8 @@ export async function fetchNearbyPlaces(lat: number, lon: number, radiusM = 1200
       const page = pages.get(key)
       const extract = (page?.extract ?? '').trim()
       if (!extract) continue
+      const lead = extract.split(/(?<=[.!?])\s/, 1)[0] ?? extract
+      if (ADMINISTRATIVE_PLACE_LEAD.test(lead)) continue
       out.push({
         title: item.title,
         extract,
