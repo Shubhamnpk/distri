@@ -1088,6 +1088,8 @@ export function NationalMap() {
   const [stations, setStations] = useState<DhmStation[]>([])
   const [province, setProvince] = useState<string | null>(null)
   const [district, setDistrict] = useState<string | null>(null)
+  const districtsRef = useRef(districts)
+  districtsRef.current = districts
   const [stationSel, setStationSel] = useState<DhmStation | null>(null)
   const [hydroSel, setHydroSel] = useState<HydroProject | null>(null)
   const [riverSel, setRiverSel] = useState<BipadStation | null>(null)
@@ -1103,6 +1105,7 @@ export function NationalMap() {
   const [localLoading, setLocalLoading] = useState(false)
   const [polyCount, setPolyCount] = useState<number | null>(null)
   const [munis, setMunis] = useState<LocalMunicipality[]>([])
+  const [viewportMunis, setViewportMunis] = useState<LocalMunicipality[]>([])
   const [parks, setParks] = useState<LocalMunicipality[]>([])
   const [allParks, setAllParks] = useState<LocalMunicipality[]>([])
   const [munisLoading, setMunisLoading] = useState(false)
@@ -1388,7 +1391,9 @@ export function NationalMap() {
   const muniByName = useMemo(() => new Map(munis.map(m => [m.name, m] as const)), [munis])
 
   // A palika belongs to one district: drop the pick when the district changes.
-  useEffect(() => { setMuniSel(null) }, [district, province])
+  useEffect(() => {
+    setMuniSel(current => current && current.district === activeKey ? current : null)
+  }, [district, province, activeKey])
 
   const districtId = district && districtIds ? districtIds[canonDistrictKey(district)] ?? null : null
   /** Census profile: the API files it per palika, so it is fetched once per district opened
@@ -1471,6 +1476,17 @@ export function NationalMap() {
     return { type: 'FeatureCollection', features: feats }
   }, [provinceDistricts, polyByName, localByName])
 
+  const allDistrictFeatures3d = useMemo(() => ({
+    type: 'FeatureCollection',
+    features: districts.flatMap(d => {
+      const key = normName(d.name)
+      const feature = polyByName[key] ?? (NAME_ALIAS[key] ? polyByName[NAME_ALIAS[key]] : undefined)
+      return feature
+        ? [{ ...(feature as object), properties: { ...((feature as { properties?: object }).properties ?? {}), _district: d.name } }]
+        : []
+    }),
+  }), [districts, polyByName])
+
   const fit: [[number, number], [number, number]] | null = useMemo(() => {
     if (district) {
       const d = districts.find(x => x.name === district)
@@ -1514,6 +1530,64 @@ export function NationalMap() {
       return { p, district: d?.name ?? null, provinceLevel: !d, exact: false, siteLabel: '', confident: false, lat: base.lat + (j - 0.5) * 0.22, lon: base.lon + (j2 - 0.5) * 0.22 }
     })
   }, [districts])
+
+  // Resolve the live viewport center to the deepest boundary currently available.
+  // This is deliberately separate from the user's selected filter: dragging the
+  // map updates the location readout without unexpectedly changing layer scope.
+  const viewportPlace = useMemo(() => {
+    const { lat, lng } = centerCoord
+    const geo = provinceGeo as { features?: { properties?: { id?: number }; geometry?: unknown }[] } | null
+    const provinceFeature = geo?.features?.find(feature => pointInGeometry(lng, lat, feature.geometry))
+    const provinceName = provinceFeature?.properties?.id != null
+      ? PROVINCE_ID_TO_NAME[provinceFeature.properties.id]
+      : null
+    const district = provinceName && zoomLevel >= 9.5
+      ? districts.find(d => {
+          if (d.province !== provinceName) return false
+          const key = normName(d.name)
+          const feature = polyByName[key] ?? (NAME_ALIAS[key] ? polyByName[NAME_ALIAS[key]] : undefined)
+          return pointInGeometry(lng, lat, (feature as { geometry?: unknown } | undefined)?.geometry)
+        }) ?? null
+      : null
+    const palika = district && zoomLevel >= 11.5
+      ? viewportMunis.find(m => m.district === canonDistrictKey(district.name) && pointInGeometry(lng, lat, (m.feature as { geometry?: unknown })?.geometry)) ?? null
+      : null
+    const localProjects = projectPoints.filter(item => {
+      if (item.lat == null || item.lon == null) return false
+      if (palika) return pointInGeometry(item.lon, item.lat, (palika.feature as { geometry?: unknown })?.geometry)
+      if (district) {
+        const key = normName(district.name)
+        const feature = polyByName[key] ?? (NAME_ALIAS[key] ? polyByName[NAME_ALIAS[key]] : undefined)
+        return pointInGeometry(item.lon, item.lat, (feature as { geometry?: unknown } | undefined)?.geometry)
+      }
+      if (provinceFeature) return pointInGeometry(item.lon, item.lat, provinceFeature.geometry)
+      return true
+    }).length
+    return { province: provinceName, district, palika, projects: localProjects }
+  }, [centerCoord, zoomLevel, provinceGeo, districts, polyByName, viewportMunis, projectPoints])
+
+  // Labels follow the camera even when the user pans into a province that is not
+  // the currently selected filter. Reuse the open province data when possible;
+  // otherwise fetch that province's municipality shapes only at local zoom.
+  useEffect(() => {
+    const visibleProvince = viewportPlace.province
+    if (!visibleProvince || zoomLevel < 11.5) {
+      setViewportMunis([])
+      return
+    }
+    const provinceDistrictKeys = new Set(districtsRef.current.filter(d => d.province === visibleProvince).map(d => canonDistrictKey(d.name)))
+    const alreadyLoaded = munis.filter(m => provinceDistrictKeys.has(m.district))
+    if (alreadyLoaded.length) {
+      setViewportMunis(alreadyLoaded)
+      return
+    }
+    let cancelled = false
+    setViewportMunis([])
+    fetchLocalMunicipalities(visibleProvince)
+      .then(rows => { if (!cancelled) setViewportMunis(rows) })
+      .catch(() => { if (!cancelled) setViewportMunis([]) })
+    return () => { cancelled = true }
+  }, [viewportPlace.province, zoomLevel, munis])
 
   const inScope = useCallback((lat: number | null, lon: number | null): boolean => {
     if (lat == null || lon == null) return false
@@ -1760,6 +1834,14 @@ export function NationalMap() {
   const handleSelectDistrict = (d: BipadDistrict) => {
     selectProvince(d.province)
     setDistrict(d.name)
+    const bounds: [[number, number], [number, number]] = d.bbox
+      ? [[d.bbox[1], d.bbox[0]], [d.bbox[3], d.bbox[2]]]
+      : [[d.lat - 0.4, d.lon - 0.4], [d.lat + 0.4, d.lon + 0.4]]
+    if (mapInstance) {
+      if (province !== d.province || district !== d.name) skipNextRegionFit.current = true
+      mapInstance.flyToBounds(bounds, { padding: [45, 45], maxZoom: 10, duration: 0.9 })
+    }
+    map3dRef.current?.fitBounds([[bounds[0][1], bounds[0][0]], [bounds[1][1], bounds[1][0]]], { padding: 55, maxZoom: 10, pitch: 0, bearing: 0, duration: 900 })
     setSearchQuery('')
     setSearchFocused(false)
     searchRef.current?.blur()
@@ -1785,16 +1867,57 @@ export function NationalMap() {
       const name = props._muni ?? props._district ?? props.name ?? props.NAME_1 ?? props.DISTRICT ?? props.district ?? provinceName ?? ''
       return {
         type: 'Feature', id: `${kind}-${index}`, geometry: feature.geometry ?? null,
-        properties: { ...props, kind, itemId: String(name), selected: selectedName != null && name === selectedName, color: kind === 'province' ? '#159b78' : kind === 'park' ? '#15803d' : '#64748b' },
+        properties: { ...props, kind, itemId: String(name), selected: selectedName != null && name === selectedName, color: selectedName != null && name === selectedName ? '#0f9f79' : kind === 'province' ? '#159b78' : kind === 'park' ? '#15803d' : '#64748b' },
       }
     })
 
+  const atlasAdminLabels = useMemo<Atlas3DFeature[]>(() => {
+    if (zoomLevel < 7.5) {
+      const geo = provinceGeo as { features?: Record<string, unknown>[] } | null
+      return (geo?.features ?? []).flatMap((feature, index) => {
+        const props = feature.properties as { id?: number } | undefined
+        const name = props?.id != null ? PROVINCE_ID_TO_NAME[props.id] : undefined
+        const center = featureCenter(feature)
+        if (!name || !center) return []
+        return [{
+          type: 'Feature' as const, id: `province-label-${index}`,
+          geometry: { type: 'Point', coordinates: center },
+          properties: { kind: 'province', itemId: name, selected: viewportPlace.province === name },
+        }]
+      })
+    }
+    if (!viewportPlace.province) return []
+    if (zoomLevel < 11.5 || !viewportPlace.district) {
+      return districts.filter(d => d.province === viewportPlace.province).map(d => ({
+        type: 'Feature' as const, id: `district-label-${d.id}`,
+        geometry: { type: 'Point' as const, coordinates: [d.lon, d.lat] as [number, number] },
+        properties: { kind: 'district', itemId: d.name, selected: district === d.name },
+      }))
+    }
+    return viewportMunis.filter(m => m.district === canonDistrictKey(viewportPlace.district!.name)).flatMap((m, index) => {
+      const center = featureCenter(m.feature)
+      if (!center) return []
+      return [{
+        type: 'Feature' as const, id: `palika-label-${index}`,
+        geometry: { type: 'Point' as const, coordinates: center },
+        properties: { kind: 'palika', itemId: m.name, selected: muniSel?.name === m.name },
+      }]
+    })
+  }, [zoomLevel, provinceGeo, viewportPlace, districts, district, viewportMunis, muniSel?.name])
+
+  const selectedDistrictBoundary = useMemo(() => district
+    ? allDistrictFeatures3d.features.find(feature => (feature.properties as { _district?: string } | undefined)?._district === district)
+    : undefined, [allDistrictFeatures3d, district])
+  const selectedDistrictPalikas = useMemo(() => district
+    ? { ...muniFeatures, features: muniFeatures.features.filter(feature => (feature.properties as { _dkey?: string } | undefined)?._dkey === canonDistrictKey(district)) }
+    : { ...muniFeatures, features: [] }, [muniFeatures, district])
+
   const atlasBoundaries = useMemo<Atlas3DFeature[]>(() => [
     ...asAtlasFeatures(provinceGeo, 'province', province),
-    ...asAtlasFeatures(districtFeatures, 'district', district),
-    ...asAtlasFeatures(muniFeatures, 'palika', muniSel?.name),
+    ...asAtlasFeatures(selectedDistrictBoundary ? { features: [selectedDistrictBoundary] } : null, 'district', district),
+    ...asAtlasFeatures(selectedDistrictPalikas, 'palika', muniSel?.name),
     ...displayParks.flatMap(p => asAtlasFeatures({ features: [p.feature] }, 'park', parkSel?.name)),
-  ], [provinceGeo, province, districtFeatures, district, muniFeatures, muniSel?.name, displayParks, parkSel?.name])
+  ], [provinceGeo, province, selectedDistrictBoundary, district, selectedDistrictPalikas, muniSel?.name, displayParks, parkSel?.name])
 
   const atlasPoints = useMemo<Atlas3DFeature[]>(() => {
   const atlasPoints: Atlas3DFeature[] = []
@@ -1821,9 +1944,34 @@ export function NationalMap() {
   }, [layers, projectPoints, inScope, hydro, hydroKindFilter, quakes, stations, incidents, hazards, roadBlocks, rainHeat, pm25Heat, riverStations, province, districtHeadquarters])
 
   const selectAtlasFeature = (kind: string, id: string) => {
-    if (kind === 'province') { handleSelectProvince(id); return }
-    if (kind === 'district') { const d = districts.find(x => x.name === id); if (d) handleSelectDistrict(d); return }
-    if (kind === 'palika') { const m = muniByName.get(normName(id)); if (m) setMuniSel(m); return }
+    if (kind === 'province') {
+      handleSelectProvince(id)
+      map3dRef.current?.easeTo({ pitch: 0, bearing: 0, duration: 650 })
+      return
+    }
+    if (kind === 'district') {
+      const selectedDistrict = districts.find(item => item.name === id)
+      if (selectedDistrict) {
+        handleSelectDistrict(selectedDistrict)
+      }
+      return
+    }
+    if (kind === 'palika') {
+      const m = [...viewportMunis, ...munis].find(item => normName(item.name) === normName(id))
+      if (m) {
+        const parentDistrict = districts.find(item => canonDistrictKey(item.name) === m.district)
+        if (parentDistrict) handleSelectDistrict(parentDistrict)
+        setMuniSel(m)
+        try {
+          const b = L.geoJSON(m.feature as never).getBounds()
+          if (b.isValid()) {
+            mapInstance?.flyToBounds(b, { padding: [40, 40], maxZoom: 13, duration: 0.8 })
+            map3dRef.current?.fitBounds([[b.getWest(), b.getSouth()], [b.getEast(), b.getNorth()]], { padding: 45, maxZoom: 13, pitch: 0, bearing: 0, duration: 800 })
+          }
+        } catch {}
+      }
+      return
+    }
     if (kind === 'park') { const p = displayParks.find(x => x.name === id); if (p) setParkSel(p); return }
     if (kind === 'project') { const x = projectPoints.find(x => x.p.name === id); if (x) handleSelectProject(x); return }
     if (kind === 'hydro') { const h = hydro.find(x => x.name === id); if (h) handleSelectHydro(h); return }
@@ -1833,13 +1981,29 @@ export function NationalMap() {
     if (kind === 'road') { const r = roadBlocks.find(x => String(x.id) === id); if (r) { setRoadSel(r); setHighwaySel(null) }; return }
     if (kind === 'rain') { const g = rainStations.find(x => String(x.id) === id); if (g) setRainSel(g); return }
     if (kind === 'river') { const s = riverStations.find(x => String(x.id) === id); if (s) setRiverSel(s); return }
-    if (kind === 'capital') { const name = id.replace(/^district-/, ''); if (id.startsWith('district-')) pickDistrict(name) }
+    if (kind === 'capital' && id.startsWith('district-')) {
+      const selectedDistrict = districts.find(item => item.name === id.replace(/^district-/, ''))
+      if (selectedDistrict) {
+        handleSelectDistrict(selectedDistrict)
+      }
+    }
   }
+
+  const viewportDistrictId = viewportPlace.district && districtIds
+    ? districtIds[canonDistrictKey(viewportPlace.district.name)] ?? null
+    : null
+  const viewportProfile = viewportDistrictId != null ? profiles[viewportDistrictId] : null
+  const viewportStatistic = viewportProfile
+    ? `Population ${viewportProfile.population.toLocaleString()} · Census ${viewportProfile.censusYear}`
+    : `${viewportPlace.projects} tracked project${viewportPlace.projects === 1 ? '' : 's'}`
+  const viewportLabel = viewportPlace.palika?.name
+    ?? viewportPlace.district?.name
+    ?? (viewportPlace.province ? `${viewportPlace.province} Province` : 'Nepal (All)')
 
   return (
     <>
       <div className="atlas-map">
-        {mapMode === '3d' && <NationalMap3D basemap={basemap} center={centerCoord} zoom={zoomLevel} bounds={fit} boundaries={atlasBoundaries} points={atlasPoints} roadsVisible={layers.roads} onSelect={selectAtlasFeature} onMove={(lat, lng, zoom) => { setCenterCoord({ lat, lng }); setZoomLevel(zoom) }} onReady={map => { map3dRef.current = map }} onFallback={() => setMapMode('2d')} />}
+        {mapMode === '3d' && <NationalMap3D basemap={basemap} center={centerCoord} zoom={zoomLevel} bounds={fit} boundaries={atlasBoundaries} adminLabels={atlasAdminLabels} points={atlasPoints} roadsVisible={layers.roads} onSelect={selectAtlasFeature} onMove={(lat, lng, zoom) => { setCenterCoord({ lat, lng }); setZoomLevel(zoom) }} onReady={map => { map3dRef.current = map }} onFallback={() => setMapMode('2d')} />}
         {mapMode === '2d' && <MapContainer
           center={[centerCoord.lat, centerCoord.lng] as [number, number]}
           zoom={zoomLevel}
@@ -1977,7 +2141,10 @@ export function NationalMap() {
               position={[hq.lat, hq.lng]}
               icon={headquartersIcon('district')}
               pane="points"
-              eventHandlers={{ click: () => pickDistrict(hq.district) }}
+              eventHandlers={{ click: () => {
+                const selectedDistrict = districts.find(item => item.name === hq.district)
+                if (selectedDistrict) handleSelectDistrict(selectedDistrict)
+              } }}
             >
               <Tooltip direction="top" offset={[0, -9]}>{`${hq.district} district HQ · ${hq.hq} (locality marker)`}</Tooltip>
             </Marker>
@@ -2184,17 +2351,21 @@ export function NationalMap() {
                 fontSize: '.72rem',
                 fontWeight: 600,
                 cursor: 'pointer',
-                border: province ? '1.5px solid var(--accent)' : '1px solid var(--border-light)',
+                border: viewportPlace.province ? '1.5px solid var(--accent)' : '1px solid var(--border-light)',
                 padding: '5px 11px',
                 height: 34,
                 display: 'flex',
                 alignItems: 'center',
                 gap: 5,
               }}
-              title="Click to select Province or District"
+              title={`${viewportLabel} · ${viewportStatistic}. Click to select Province or District.`}
+              aria-label={`Current map location: ${viewportLabel}. ${viewportStatistic}. Open place selector.`}
             >
-              <MapPin size={13} className={province ? 'text-accent' : 'text-tertiary'} />
-              <span>{district ? `${province} › ${district}` : province ? `${province} Province` : 'Nepal (All)'}</span>
+              <MapPin size={13} className={viewportPlace.province ? 'text-accent' : 'text-tertiary'} />
+              <span className="atlas-current-place">
+                <span>{viewportPlace.province ? `${viewportPlace.province} › ${viewportLabel}` : viewportLabel}</span>
+                <small>{viewportStatistic}</small>
+              </span>
               <ChevronDown size={13} className="text-tertiary" />
             </button>
 
@@ -2216,7 +2387,7 @@ export function NationalMap() {
                   <span style={{ fontSize: '.58rem', fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase' }} className="text-tertiary">
                     Select Jurisdiction
                   </span>
-                  {(province || district) && (
+                  {viewportPlace.province && (
                     <button
                       onClick={() => { selectProvince(null); setIsRegionMenuOpen(false); }}
                       style={{ fontSize: '.64rem', fontWeight: 700, color: 'var(--accent)', border: 'none', background: 'transparent', cursor: 'pointer' }}
@@ -2232,9 +2403,9 @@ export function NationalMap() {
                     padding: '.4rem .6rem',
                     borderRadius: 8,
                     fontSize: '.72rem',
-                    fontWeight: !province ? 700 : 500,
-                    background: !province ? 'var(--accent-light)' : 'transparent',
-                    color: !province ? 'var(--accent)' : 'var(--text)',
+                    fontWeight: !viewportPlace.province ? 700 : 500,
+                    background: !viewportPlace.province ? 'var(--accent-light)' : 'transparent',
+                    color: !viewportPlace.province ? 'var(--accent)' : 'var(--text)',
                     cursor: 'pointer',
                     border: 'none',
                     textAlign: 'left',
@@ -2245,12 +2416,13 @@ export function NationalMap() {
                 </button>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
                   {PROVINCES.map(p => {
-                    const isCurProv = province === p
+                    const isCurProv = viewportPlace.province === p
+                    const menuDistricts = districts.filter(d => d.province === p)
                     return (
                       <div key={p}>
                         <button
                           onClick={() => {
-                            selectProvince(isCurProv ? null : p)
+                            handleSelectProvince(p)
                           }}
                           style={{
                             width: '100%',
@@ -2270,26 +2442,26 @@ export function NationalMap() {
                         >
                           <span>{p} Province</span>
                           <span style={{ fontSize: '.6rem', color: 'var(--text-tertiary)' }}>
-                            {districts.filter(d => d.province === p).length} districts
+                            {menuDistricts.length} districts
                           </span>
                         </button>
-                        {isCurProv && provinceDistricts.length > 0 && (
+                        {isCurProv && menuDistricts.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '.3rem .4rem .5rem 1rem' }}>
-                            {provinceDistricts.map(d => (
+                            {menuDistricts.map(d => (
                               <button
                                 key={d.id}
                                 onClick={() => {
-                                  pickDistrict(d.name)
+                                  handleSelectDistrict(d)
                                   setIsRegionMenuOpen(false)
                                 }}
                                 style={{
                                   fontSize: '.62rem',
-                                  fontWeight: district === d.name ? 700 : 500,
+                                  fontWeight: viewportPlace.district?.name === d.name ? 700 : 500,
                                   padding: '2px 7px',
                                   borderRadius: 99,
-                                  border: '1px solid var(--border-light)',
-                                  background: district === d.name ? 'var(--accent)' : 'var(--bg-sunken)',
-                                  color: district === d.name ? '#fff' : 'var(--text-secondary)',
+                                  border: viewportPlace.district?.name === d.name ? '1px solid var(--accent)' : '1px solid var(--border-light)',
+                                  background: viewportPlace.district?.name === d.name ? 'var(--accent)' : 'var(--bg-sunken)',
+                                  color: viewportPlace.district?.name === d.name ? '#fff' : 'var(--text-secondary)',
                                   cursor: 'pointer',
                                 }}
                               >
@@ -2306,7 +2478,7 @@ export function NationalMap() {
             )}
           </div>
 
-          {(province || district) && (
+          {viewportPlace.province && (
             <button
               onClick={() => selectProvince(null)}
               className="atlas-topbar-pill text-tertiary"
@@ -3413,18 +3585,24 @@ export function NationalMap() {
           {/* Scale bar — always visible at bottom of legend */}
           {(() => {
             const metersPerPx = 156543.03392 * Math.cos(centerCoord.lat * Math.PI / 180) / Math.pow(2, zoomLevel)
-            const rawM = metersPerPx * 80
-            const nice = [1,2,5,10,20,50,100,200,500,1000,2000,5000,10000,20000,50000,100000].find(n => n >= rawM) ?? 100000
-            const widthPx = Math.round(nice / metersPerPx)
+            // Largest nice value that fits ~110px, so the bar never balloons zoomed far out.
+            const nice = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000].reverse()
+              .find(n => n <= 110 * metersPerPx) ?? 1
+            const widthPx = Math.max(24, Math.round(nice / metersPerPx))
             const scaleLabel = nice >= 1000 ? `${nice / 1000} km` : `${nice} m`
             return (
-              <div style={{ marginTop: '.5rem', paddingTop: '.4rem', borderTop: '1px solid var(--border-light)' }}>
-                <div style={{ width: widthPx, height: 3, background: 'var(--text-tertiary)', borderRadius: 99, position: 'relative' }}>
-                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '50%', background: 'var(--text)', borderRadius: 99 }} />
-                  <div style={{ position: 'absolute', left: 0, top: -3, bottom: -3, width: 1.5, background: 'var(--text-tertiary)' }} />
-                  <div style={{ position: 'absolute', right: 0, top: -3, bottom: -3, width: 1.5, background: 'var(--text-tertiary)' }} />
-                </div>
-                <span style={{ fontSize: '.52rem', fontWeight: 700, color: 'var(--text-tertiary)', letterSpacing: '.03em', display: 'block', marginTop: 2 }}>{scaleLabel}</span>
+              <div style={{ marginTop: '.5rem', paddingTop: '.45rem', borderTop: '1px solid var(--border-light)', display: 'grid', gap: 3 }}>
+                <span style={{ fontSize: '.58rem', fontWeight: 800, color: 'var(--text)', letterSpacing: '.03em', lineHeight: 1 }}>{scaleLabel}</span>
+                <div
+                  title={`Scale bar · ${scaleLabel}`}
+                  style={{
+                    width: widthPx,
+                    height: 5,
+                    border: '1px solid var(--text-tertiary)',
+                    borderRadius: 2,
+                    background: 'repeating-linear-gradient(90deg, var(--text) 0, var(--text) 25%, var(--bg-elevated) 25%, var(--bg-elevated) 50%)',
+                  }}
+                />
               </div>
             )
           })()}

@@ -1,8 +1,8 @@
 // PPMO e-GP procurement mirror - Open Contracting Data Standard (OCDS) bulk files.
 // No key, direct CDN download. SERVER-ONLY (uses node:zlib) - never import from client components.
 // Verified live: 4,872 contracting processes as gzipped JSONL.
-// NOTE: snapshot covers 2016-2018 (e-GP mirror, not live). Label honestly in UI.
-// Live tenders resume when bolpatra.gov.np (currently under maintenance) returns.
+// NOTE: snapshot covers 2016-2018 (e-GP mirror, not live). Current notices
+// come from lib/egp.ts; keep this archive labelled separately in the UI.
 
 import { gunzipSync } from 'node:zlib'
 
