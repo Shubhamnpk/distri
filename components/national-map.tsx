@@ -726,6 +726,8 @@ const BASEMAPS: Record<BasemapKey, { name: string; url: string; attribution: str
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: 'Tiles &copy; Esri, Maxar',
     bg: 'linear-gradient(135deg, #1a2a1a 0%, #2a3a1a 30%, #1a2a30 60%, #0a1a0a 100%)',
+    // Keep zooming past the reliable Nepal imagery range by enlarging z18 tiles.
+    maxNativeZoom: 18,
   },
 }
 
@@ -1068,6 +1070,8 @@ export function NationalMap() {
   const [hydro, setHydro] = useState<HydroProject[]>([])
   const [rainStations, setRainStations] = useState<BipadStation[]>([])
   const [pm25Nodes, setPm25Nodes] = useState<(number | null)[] | null>(null)
+  const [pm25Loading, setPm25Loading] = useState(false)
+  const pm25RequestStarted = useRef(false)
   const [roadBlocks, setRoadBlocks] = useState<BipadRoadBlock[]>([])
   const [roadSel, setRoadSel] = useState<BipadRoadBlock | null>(null)
   const [highwaySel, setHighwaySel] = useState<{ ref: string; name?: string } | null>(null)
@@ -1251,13 +1255,6 @@ export function NationalMap() {
     fetchDistrictPolygons()
       .then(p => { if (!cancelled) { setPolyByName(p.byName); setPolyCount(p.geojson.features.length) } })
       .catch(() => { if (!cancelled) setPolyCount(0) })
-    fetchHydroProjects().then(h => { if (!cancelled) setHydro(h) }).catch(() => {})
-    fetchBipadRainStationsAll().then(s => { if (!cancelled) setRainStations(s) }).catch(() => {})
-    fetchBipadRiverStationsAll().then(s => { if (!cancelled) setRiverStations(s) }).catch(() => {})
-    // The PM2.5 field is ~230 model nodes in one request, like the rain gauges.
-    fetchPm25Grid(NEPAL_PM25_GRID).then(n => { if (!cancelled) setPm25Nodes(n) }).catch(() => {})
-    // Department of Roads blockage log: ~405 events over ~6 months, one request.
-    fetchBipadRoadBlocks().then(r => { if (!cancelled) setRoadBlocks(r.results) }).catch(() => {})
     // Per-district seismic risk: 77 rows, one request, keyed by BIPAD district id.
     fetchBipadQuakeRisk().then(list => {
       if (!cancelled) setQuakeRisk(Object.fromEntries(list.map(r => [r.district, r])))
@@ -1265,9 +1262,28 @@ export function NationalMap() {
     // Name → BIPAD id: district ids in this component can come from polygon files,
     // whose ids are synthetic, so the census/risk joins go through the name.
     fetchBipadDistrictIds().then(m => { if (!cancelled) setDistrictIds(m) }).catch(() => { if (!cancelled) setDistrictIds({}) })
-    fetchNepalQuakes(100).then(q => { if (!cancelled) setQuakes(q) }).catch(() => {})
-    fetchDhmForecast().then(f => {
-      if (cancelled) return
+    return () => { cancelled = true }
+  }, [])
+
+  // Indicator feeds (the 2D and 3D renderers both read this one state) load
+  // only when their layer is switched on, like the PM2.5 grid below. No feed's
+  // numbers exist before its indicator is active. Each is requested at most
+  // once per session; toggle the layer off and on to retry a failed fetch.
+  const startedFeeds = useRef<Record<string, boolean>>({})
+  const startFeed = (key: string, task: () => Promise<void>) => {
+    if (startedFeeds.current[key]) return
+    startedFeeds.current[key] = true
+    task().catch(() => { startedFeeds.current[key] = false })
+  }
+  useEffect(() => {
+    if (layers.hydro) startFeed('hydro', async () => { setHydro(await fetchHydroProjects()) })
+    if (layers.rain) startFeed('rain', async () => { setRainStations(await fetchBipadRainStationsAll()) })
+    if (layers.rivers) startFeed('rivers', async () => { setRiverStations(await fetchBipadRiverStationsAll()) })
+    // Department of Roads blockage log: ~405 events over ~6 months, one request.
+    if (layers.roads) startFeed('roads', async () => { setRoadBlocks((await fetchBipadRoadBlocks()).results) })
+    if (layers.quakes || layers.quakesPast) startFeed('quakes', async () => { setQuakes(await fetchNepalQuakes(100)) })
+    if (layers.weather) startFeed('weather', async () => {
+      const f = await fetchDhmForecast()
       setStations((f?.stations ?? []).map(s => ({
         id: s.id, name: s.name, latitude: s.latitude, longitude: s.longitude,
         condition: s.manual_forecast?.[0]?.weather?.name ?? undefined,
@@ -1277,23 +1293,35 @@ export function NationalMap() {
           rain_probability: d.rain_probability ?? 0, weather: d.weather ? { name: d.weather.name } : undefined,
         })),
       })))
-    }).catch(() => {})
-    fetchBipadIncidents(1000, 'id,title,point,hazard,incident_on,source,verified,loss').then(i => { if (!cancelled) setIncidents(i.results) }).catch(() => {})
-    fetchBipadHazards().then(h => {
-      if (!cancelled) setHazards(Object.fromEntries(h.results.map(x => [Number(x.id), x])))
-    }).catch(() => {})
-    // Load protected areas for ALL provinces upfront so parks show nation-wide
-    const PROVINCES_ALL = ['Koshi', 'Madhesh', 'Bagmati', 'Gandaki', 'Lumbini', 'Karnali', 'Sudurpashchim']
-    Promise.all(PROVINCES_ALL.map(p => fetchLocalProtected(p)))
-      .then(results => {
-        if (cancelled) return
-        // A protected area can be listed under every province it touches
-        // (Koshi Tappu sits in Koshi + Madhesh) - keep one row per name.
-        setAllParks([...new Map(results.flat().map(m => [m.name, m])).values()])
+    })
+    if (layers.incidents) {
+      startFeed('incidents', async () => { setIncidents((await fetchBipadIncidents(1000, 'id,title,point,hazard,incident_on,source,verified,loss')).results) })
+      startFeed('hazards', async () => {
+        setHazards(Object.fromEntries((await fetchBipadHazards()).results.map(x => [Number(x.id), x])))
       })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [])
+    }
+    if (layers.parks) startFeed('parks', async () => {
+      // Protected areas for ALL provinces, so parks show nation-wide once on.
+      const provincesAll = ['Koshi', 'Madhesh', 'Bagmati', 'Gandaki', 'Lumbini', 'Karnali', 'Sudurpashchim']
+      const results = await Promise.all(provincesAll.map(p => fetchLocalProtected(p)))
+      // A protected area can be listed under every province it touches
+      // (Koshi Tappu sits in Koshi + Madhesh) - keep one row per name.
+      setAllParks([...new Map(results.flat().map(m => [m.name, m])).values()])
+    })
+  }, [layers.hydro, layers.rain, layers.rivers, layers.roads, layers.quakes, layers.quakesPast, layers.weather, layers.incidents, layers.parks])
+
+  // The regional PM2.5 model grid is optional; avoid its large multi-coordinate
+  // request until the user turns that layer on. Keep a single in-flight request
+  // even if the layer is toggled while the data is loading.
+  useEffect(() => {
+    if (!layers.pm25 || pm25RequestStarted.current || pm25Nodes !== null) return
+    pm25RequestStarted.current = true
+    setPm25Loading(true)
+    fetchPm25Grid(NEPAL_PM25_GRID)
+      .then(nodes => setPm25Nodes(nodes))
+      .catch(() => { pm25RequestStarted.current = false })
+      .finally(() => setPm25Loading(false))
+  }, [layers.pm25, pm25Nodes])
 
   const provinceDistricts = useMemo(
     () => (province ? districts.filter(d => d.province === province) : []),
@@ -1827,6 +1855,7 @@ export function NationalMap() {
             key={basemap}
             url={BASEMAPS[basemap].url}
             attribution={BASEMAPS[basemap].attribution}
+            maxZoom={22}
             maxNativeZoom={BASEMAPS[basemap].maxNativeZoom}
           />
           <MapInstanceBridge
@@ -2144,7 +2173,7 @@ export function NationalMap() {
 
           <div className="atlas-view-switch" role="group" aria-label="Map dimension">
             <button type="button" onClick={() => setMapMode('2d')} aria-pressed={mapMode === '2d'}>2D</button>
-            <button type="button" onClick={() => setMapMode('3d')} aria-pressed={mapMode === '3d'}>3D terrain</button>
+            <button type="button" onClick={() => setMapMode('3d')} aria-pressed={mapMode === '3d'}>3D</button>
           </div>
 
           <div style={{ position: 'relative' }}>
@@ -2461,7 +2490,7 @@ export function NationalMap() {
                 style={{
                   borderColor: active ? color : 'transparent',
                 }}
-                title={`${label}${count != null ? ` (${count})` : ''} · Click to toggle on/off`}
+                title={`${label}${count != null && count > 0 ? ` (${count})` : ''} · Click to toggle on/off`}
               >
                 <span
                   style={{
@@ -2474,7 +2503,7 @@ export function NationalMap() {
                   }}
                 />
                 <span>{label}</span>
-                {count != null && (
+                {count != null && count > 0 && (
                   <span
                     style={{
                       fontSize: '.62rem',
@@ -3367,7 +3396,7 @@ export function NationalMap() {
               {layers.pm25 && (
                 <span className="atlas-hq-legend-item" style={{ gap: 6 }} title="CAMS model PM2.5 on its native ~0.4° grid — a regional picture, not a street-level reading. It cannot resolve valleys, so Kathmandu's real PM2.5 runs far higher than the model shows.">
                   <span style={{ width: 46, height: 6, borderRadius: 99, background: PM25_HEAT_GRADIENT }} />
-                  5 → 75+ µg/m³ · WHO bands · ~0.4° model grid, valleys not resolved
+                  {pm25Loading ? 'Loading PM2.5 model…' : '5 → 75+ µg/m³ · WHO bands · ~0.4° model grid, valleys not resolved'}
                 </span>
               )}
               {[
