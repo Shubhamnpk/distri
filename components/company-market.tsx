@@ -286,7 +286,7 @@ export function FilingsSection({ market, company }: { market: CompanyMarket; com
                 </div>
                 {annual.note && <p className="text-secondary" style={{ margin: '.6rem 0 .25rem', fontSize: '.7rem', lineHeight: 1.6 }}>{annual.note}</p>}
                 <span className="text-tertiary" style={{ fontSize: '.66rem' }}>Source: {annual.source}</span>
-                <a href={annual.sourceUrl} target="_blank" rel="noreferrer" className="text-primary" style={{ marginLeft: '.45rem', fontSize: '.68rem' }}>Open report ↗</a>
+                <a href={annual.sourceUrl} data-doc="true" data-title={`${company.name} ${annual.year} Annual Statement`} target="_blank" rel="noreferrer" className="text-primary" style={{ marginLeft: '.45rem', fontSize: '.68rem' }}>Open report ↗</a>
               </div>
             </details>
           ))}

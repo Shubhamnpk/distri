@@ -7,6 +7,7 @@ import {
   fetchNepseSectorMap,
 } from '@/lib/nepse'
 import type { NepseMarketPulse } from '@/lib/types'
+import { cdnCache } from '@/lib/cache'
 
 export const revalidate = 3600
 
@@ -41,7 +42,7 @@ export async function GET() {
   const headline = indices.find(index => /nepse index/i.test(index.name)) ?? indices[0] ?? null
 
   if (!headline && data.stocks.length === 0) {
-    return NextResponse.json({ error: 'Market data unavailable' }, { status: 503 })
+    return NextResponse.json({ error: 'Market data unavailable' }, { status: 503, headers: { 'Cache-Control': 'no-store' } })
   }
 
   const sectorStats = new Map<string, { count: number; turnover: number; sum: number; movers: number }>()
@@ -89,6 +90,6 @@ export async function GET() {
   }
 
   return NextResponse.json(payload, {
-    headers: { 'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=600' },
+    headers: cdnCache(3600),
   })
 }

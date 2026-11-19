@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
   title: 'Search Nepal public data',
-  description: 'Find Nepal provinces, districts, local units, public companies, infrastructure projects and datasets.',
+  description: 'Search Nepal provinces, districts, palikas, NEPSE stocks, public companies, infrastructure projects, open datasets and sources.',
   alternates: { canonical: '/search' },
 }
 

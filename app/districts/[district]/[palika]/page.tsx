@@ -111,24 +111,17 @@ export default function PalikaPage() {
   const province = provinceOfDistrict(district.name)
   const provinceSlug = findProvinceByName(province)?.slug
   const provinceGeoSlug = PROVINCE_INFO[province]?.geoSlug ?? provinceSlug ?? 'bagmati'
-  const palikas = palikasOfDistrict(district.name)
-  const palikaMarkers = palikas.flatMap(p => {
-    const pa = palikaAreas[palikaKey(district.name, p.slug)]
-    return pa?.lat != null && pa?.lon != null
-      ? [{ name: p.name, slug: p.slug, lat: pa.lat, lon: pa.lon }]
+  const districtPalikas = palikasOfDistrict(district.name)
+  const palikaMarkers = districtPalikas.flatMap(item => {
+    const location = palikaAreas[palikaKey(district.name, item.slug)]
+    return location?.lat != null && location?.lon != null
+      ? [{ name: item.name, slug: item.slug, lat: location.lat, lon: location.lon }]
       : []
   })
-  if (coords && !palikaMarkers.some(p => p.slug === palika.slug)) {
+  if (coords && !palikaMarkers.some(item => item.slug === palika.slug)) {
     palikaMarkers.push({ name: palika.name, slug: palika.slug, lat: coords.lat, lon: coords.lon })
   }
-  const nearbyMarkers = nearby.map(place => ({
-    title: place.title,
-    lat: place.lat,
-    lon: place.lon,
-    url: place.url,
-    note: `${place.distanceKm} km away`,
-  }))
-  const mapCenter = districtCoords ?? coords
+  const mapCenter = coords ?? districtCoords
   const pmBand = pm25Band(pm)
   const condition = wmoText(weather?.weather_code)
   const avgHousehold = census && census.households > 0 ? census.population / census.households : null
@@ -253,16 +246,16 @@ export default function PalikaPage() {
               districtName={district.name}
               districtSlug={district.slug}
               center={mapCenter}
-              palikas={palikaMarkers}
-              places={nearbyMarkers}
+              focus="palika"
+              selectedPalikaName={palika.name}
               selectedPalikaSlug={palika.slug}
+              palikas={palikaMarkers}
             />
           </div>
           <div className="province-map-legend">
-            <span><i className="map-dot is-selected" /> {district.name} district</span>
-            <span><i className="map-dot is-district" /> Other districts</span>
-            <span><i className="map-dot is-palika" /> Local unit</span>
-            {nearbyMarkers.length > 0 && <span><i className="map-dot is-attraction" /> Nearby place</span>}
+            <span><i className="map-dot is-district" /> {district.name} outline</span>
+            <span><i className="map-dot is-selected" /> {palika.name} boundary</span>
+            <span><i className="map-dot is-palika" /> Other local units (click to open)</span>
           </div>
         </section>
       )}

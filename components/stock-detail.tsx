@@ -249,6 +249,7 @@ export function StockDetail({ stock, sector, history, peers, profile, rank, fina
   }, [history, range])
 
   const chartPoints = useMemo(() => samplePoints(selected), [selected])
+  const volumePoints = useMemo(() => samplePoints(chartPoints, 72), [chartPoints])
   const selectedFirst = selected[0]?.close ?? 0
   const selectedLast = selected[selected.length - 1]?.close ?? 0
   const selectedPct = selectedFirst > 0 ? ((selectedLast - selectedFirst) / selectedFirst) * 100 : 0
@@ -406,12 +407,12 @@ export function StockDetail({ stock, sector, history, peers, profile, rank, fina
                 <div><span>Sessions</span><strong>{selected.length}</strong></div>
               </div>
               <div style={{ marginTop: '1rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '.5rem', marginBottom: '.35rem' }}>
+                <div className="stock-volume-head">
                   <span className="stock-card-label">Daily volume</span>
-                  <span style={{ fontSize: '.58rem', color: 'var(--text-tertiary)' }}>{formatNum(Math.max(0, ...chartPoints.map(point => point.volume)))} peak shares</span>
+                  <span className="stock-volume-summary">{volumePoints.length} sessions · {formatNum(maxVolume)} peak shares</span>
                 </div>
-                <div className="stock-volume-bars">
-                  {chartPoints.map(point => (
+                <div className="stock-volume-bars" role="img" aria-label={`Share volume across ${volumePoints.length} sampled sessions in the ${range} range`}>
+                  {volumePoints.map(point => (
                     <span
                       key={point.date}
                       title={`${fmtDate(point.date)} · ${formatNum(point.volume)} shares · ${formatNpr(point.turnover)} traded`}

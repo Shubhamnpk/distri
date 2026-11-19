@@ -7,6 +7,7 @@
 // | Longitude | Latitude | License Type.
 
 import { NextResponse } from 'next/server'
+import { cdnCache } from '@/lib/cache'
 
 export const revalidate = 86400
 
@@ -48,7 +49,7 @@ export type HydroProject = {
 export async function GET() {
   try {
     const res = await fetch(URL, { headers: HEADERS, next: { revalidate: 86400 } })
-    if (!res.ok) return NextResponse.json({ projects: [] }, { status: 200 })
+    if (!res.ok) return NextResponse.json({ projects: [] }, { status: 200, headers: cdnCache(3600) })
     const html = await res.text()
 
     const rows = [...html.matchAll(/<tr>([\s\S]*?)<\/tr>/g)]
@@ -83,8 +84,8 @@ export async function GET() {
       })
     }
 
-    return NextResponse.json({ projects, count: projects.length })
+    return NextResponse.json({ projects, count: projects.length }, { headers: cdnCache(86400) })
   } catch {
-    return NextResponse.json({ projects: [] }, { status: 200 })
+    return NextResponse.json({ projects: [] }, { status: 200, headers: cdnCache(600) })
   }
 }

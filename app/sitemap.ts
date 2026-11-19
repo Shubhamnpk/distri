@@ -8,10 +8,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     '/', '/companies', '/projects', '/economy', '/market', '/places', '/map',
     '/procurement', '/datasets', '/sources', '/environment', '/disasters', '/calendar', '/search', '/releases', '/about',
   ]
+  // NOTE: palikas (local units) are deliberately NOT in the sitemap. At ~750
+  // URLs the crawler was walking into territory nobody actually queries, which
+  // cost real render CPU on Vercel. Provinces and districts cover discovery.
   const placePaths = [
     ...PROVINCES.map(({ slug }) => `/provinces/${slug}`),
     ...DISTRICTS.map(({ slug }) => `/districts/${slug}`),
-    ...LOCAL_UNITS.map(({ district, slug }) => `/districts/${slugify(district)}/${slug}`),
   ]
   const entityPaths = [
     ...companies.map(({ name }) => `/companies/${slugify(name)}`),

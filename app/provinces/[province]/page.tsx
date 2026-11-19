@@ -269,7 +269,7 @@ export default function ProvincePage() {
     const lat = geo?.lat ?? local?.lat
     const lon = geo?.lon ?? local?.lon
     return lat != null && lon != null
-      ? [{ name: row.name, lat, lon, population: row.population }]
+      ? [{ name: row.name, slug: row.slug, lat, lon, population: row.population }]
       : []
   })
 
@@ -429,15 +429,28 @@ export default function ProvincePage() {
           {ageBands.length > 0 && ageMax > 0 && (
             <section className="panel place-age">
               <div className="panel-head"><h3>Age structure</h3><span className="muted">Census {sums.year}</span></div>
-              <div className="age-bars">
+              <div className="age-pyramid" role="group" aria-label={`Population by age band and gender, census ${sums.year}`}>
+                <div className="age-pyramid-head">
+                  <span>Male</span><span>Age band</span><span>Female</span>
+                </div>
                 {ageBands.map(band => (
-                  <div key={band.band} className="age-row">
-                    <span className="age-label">{band.band}</span>
-                    <div className="age-track">
-                      <span className="age-male" style={{ width: `${(band.male / ageMax) * 100}%` }} />
-                      <span className="age-female" style={{ width: `${(band.female / ageMax) * 100}%` }} />
-                    </div>
-                    <span className="age-val">{nf.format(band.male + band.female)}</span>
+                  <div key={band.band} className="age-pyramid-row">
+                    {(() => {
+                      const total = band.male + band.female
+                      const maleShare = total > 0 ? (band.male / total) * 100 : 0
+                      const femaleShare = total > 0 ? (band.female / total) * 100 : 0
+                      return <>
+                        <span className="age-pyramid-side age-pyramid-left">
+                          <span className="age-pyramid-value">{nf.format(band.male)} <small>({maleShare.toFixed(1)}%)</small></span>
+                          <span className="age-pyramid-track"><span className="age-pyramid-bar age-male" style={{ width: `${(band.male / ageMax) * 100}%` }} /></span>
+                        </span>
+                    <span className="age-pyramid-label">{band.band}</span>
+                        <span className="age-pyramid-side">
+                          <span className="age-pyramid-track"><span className="age-pyramid-bar age-female" style={{ width: `${(band.female / ageMax) * 100}%` }} /></span>
+                          <span className="age-pyramid-value">{nf.format(band.female)} <small>({femaleShare.toFixed(1)}%)</small></span>
+                        </span>
+                      </>
+                    })()}
                   </div>
                 ))}
               </div>

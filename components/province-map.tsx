@@ -6,6 +6,7 @@ import 'leaflet/dist/leaflet.css'
 
 export type ProvinceMapDistrict = {
   name: string
+  slug: string
   lat: number
   lon: number
   population?: number | null
@@ -86,6 +87,10 @@ export function ProvinceMap({ geoSlug, capital, districts, attractions = [] }: {
             <Tooltip direction="top" offset={[0, -6]}>
               {district.name}{district.population ? ` · ${nf.format(district.population)}` : ''}
             </Tooltip>
+            <Popup>
+              <a href={`/districts/${district.slug}`}>Open {district.name} district</a>
+              {district.population != null && <><br />{nf.format(district.population)} people</>}
+            </Popup>
           </CircleMarker>
         )
       })}
