@@ -1,4 +1,5 @@
 import { fetchEgpTender } from '@/lib/egp'
+import { cdnCache } from '@/lib/cache'
 
 export async function GET(
   _request: Request,
@@ -11,10 +12,10 @@ export async function GET(
 
   const tender = await fetchEgpTender(id)
   if (!tender) {
-    return Response.json({ error: 'Tender details are temporarily unavailable' }, { status: 502 })
+    return Response.json({ error: 'Tender details are temporarily unavailable' }, { status: 502, headers: { 'Cache-Control': 'no-store' } })
   }
 
   return Response.json(tender, {
-    headers: { 'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600' },
+    headers: cdnCache(1800),
   })
 }

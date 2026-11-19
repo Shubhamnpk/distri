@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server'
+import { cdnCache } from '@/lib/cache'
 import { searchDatasets } from '@/lib/opendatanepal'
 import { fetchNepseStocks } from '@/lib/nepse'
 import { formatNpr } from '@/lib/currency'
 
-export const dynamic = 'force-dynamic'
+// GET only, cacheable: results are per-query-key, so the CDN stores one entry
+// per `?q=`. Stock prices go stale in hours anyway; dropping `force-dynamic`
+// and `private, no-store` means the search API stops paying function CPU on
+// every keystroke-triggered fetch.
 
 type SearchHit = {
   id: string
@@ -36,7 +40,7 @@ function stockScore(query: string, stock: { symbol: string; companyName: string;
 
 export async function GET(request: Request) {
   const query = normalize(new URL(request.url).searchParams.get('q') ?? '')
-  if (query.length < 2) return NextResponse.json({ hits: [] })
+  if (query.length < 2) return NextResponse.json({ hits: [] }, { headers: cdnCache(600) })
 
   const [stocks, datasets] = await Promise.all([
     fetchNepseStocks().catch(() => []),
@@ -72,6 +76,6 @@ export async function GET(request: Request) {
   }))
 
   return NextResponse.json({ hits: [...stockHits, ...datasetHits] }, {
-    headers: { 'Cache-Control': 'private, no-store' },
+    headers: cdnCache(600),
   })
 }
