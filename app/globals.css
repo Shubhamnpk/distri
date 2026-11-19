@@ -2261,3 +2261,24 @@ img { display: block; max-width: 100%; }
   .sector-heat-grid { grid-template-columns: 1fr; }
 }
 
+@keyframes docModalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.doc-preview-backdrop {
+  animation: docBackdropIn 0.18s ease-out;
+}
+
+@keyframes docBackdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+

@@ -2,6 +2,7 @@ import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { ThemeProvider } from '@/components/theme-provider'
+import { DocumentViewerProvider } from '@/components/document-viewer-provider'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { WebsiteStructuredData } from '@/components/website-structured-data'
@@ -13,7 +14,7 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: 'Drishti — Nepal Public Data & Accountability',
+    default: 'Drishti · Nepal Public Data & Accountability',
     template: '%s | Drishti',
   },
   description: 'Explore Nepal public data in one place: government company finances, infrastructure progress, NEPSE, procurement, weather, disasters and official source records.',
@@ -27,7 +28,7 @@ export const metadata: Metadata = {
     locale: 'en_NP',
     siteName: 'Drishti',
     title: {
-      default: 'Drishti — Nepal Public Data & Accountability',
+      default: 'Drishti · Nepal Public Data & Accountability',
       template: '%s | Drishti',
     },
     description: 'Explore Nepal public data, government company finances, infrastructure progress, markets and live environment feeds.',
@@ -36,7 +37,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: {
-      default: 'Drishti — Nepal Public Data & Accountability',
+      default: 'Drishti · Nepal Public Data & Accountability',
       template: '%s | Drishti',
     },
     description: 'Explore Nepal public data, government company finances, infrastructure progress, markets and live environment feeds.',
@@ -62,11 +63,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body className="antialiased">
         <WebsiteStructuredData />
         <ThemeProvider>
-          <div className="app-shell">
-            <Header />
-            {children}
-            <Footer />
-          </div>
+          <DocumentViewerProvider>
+            <div className="app-shell">
+              <Header />
+              {children}
+              <Footer />
+            </div>
+          </DocumentViewerProvider>
         </ThemeProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

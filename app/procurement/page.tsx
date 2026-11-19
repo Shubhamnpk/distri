@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowUpRight, Banknote, Building2, CalendarDays, Database, ExternalLink, FileArchive, FileText } from 'lucide-react'
+import { ArrowUpRight, Database, ExternalLink, FileArchive } from 'lucide-react'
 import { LiveProcurementTable, ProcurementHighlights } from '@/components/live-procurement'
 import { ProcurementTable } from '@/components/procurement-table'
 import { ProcurementYearChart } from '@/components/procurement-chart'
@@ -40,16 +40,11 @@ export default async function ProcurementPage() {
       {liveSummary && (
         <section className="grid-auto" style={{ marginTop: '.75rem', marginBottom: '.75rem' }}>
           {[
-            { icon: FileText, label: 'Open procurement notices', value: liveSummary.open.toLocaleString(), color: 'var(--primary)' },
-            { icon: Banknote, label: 'Works notices', value: liveSummary.works_published.toLocaleString(), color: '#7c3aed' },
-            { icon: Building2, label: 'Goods notices', value: liveSummary.goods_published.toLocaleString(), color: '#16a34a' },
-            { icon: CalendarDays, label: 'Approved public entities', value: liveSummary.approved_public_entities.toLocaleString(), color: '#b87d2a' },
+            { label: 'Open procurement notices', value: liveSummary.open.toLocaleString() },
+            { label: 'Approved public entities', value: liveSummary.approved_public_entities.toLocaleString() },
           ].map(card => (
             <div key={card.label} className="bg-card border border-line-light rounded-lg shadow-sm" style={{ padding: '.85rem .95rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '.35rem' }}>
-                <card.icon size={14} style={{ color: card.color }} />
-                <span className="text-secondary" style={{ fontSize: '.64rem', fontWeight: 500 }}>{card.label}</span>
-              </div>
+              <span className="text-secondary" style={{ display: 'block', fontSize: '.64rem', fontWeight: 500 }}>{card.label}</span>
               <strong style={{ display: 'block', fontSize: '1.3rem', letterSpacing: '-.03em', marginTop: '.25rem' }}>{card.value}</strong>
             </div>
           ))}
@@ -74,7 +69,7 @@ export default async function ProcurementPage() {
               Official e-GP portal <ExternalLink size={12} />
             </a>
           </div>
-          <LiveProcurementTable tenders={live.tenders} total={live.total} />
+          <LiveProcurementTable tenders={live.tenders} total={live.total} updatedAt={live.updatedAt} />
         </section>
       )}
 
@@ -82,7 +77,7 @@ export default async function ProcurementPage() {
 
       <details className="panel" style={{ marginBottom: '.75rem' }}>
         <summary style={{ cursor: 'pointer', padding: '1rem 1.1rem', display: 'flex', alignItems: 'center', gap: '.55rem', fontWeight: 650, fontSize: '.85rem' }}>
-          <FileArchive size={16} className="text-primary" /> Historical OCDS archive (2016–2018)
+          <FileArchive size={16} className="text-primary" /> Historical OCDS archive (2016-2018)
           <span className="muted" style={{ fontWeight: 400, fontSize: '.68rem', marginLeft: 'auto' }}>{historical?.total.toLocaleString() ?? 0} processes</span>
         </summary>
         <div style={{ borderTop: '1px solid var(--border)', padding: '1rem 1.1rem' }}>
@@ -125,7 +120,7 @@ export default async function ProcurementPage() {
         <div style={{ flex: 1, minWidth: 200 }}>
           <strong style={{ fontSize: '.74rem' }}>Sources: PPMO e-GP and Open Contracting Partnership</strong>
           <p className="text-secondary" style={{ margin: '.1rem 0 0', fontSize: '.62rem' }}>
-            Live listing and dates from the official portal; archived OCDS releases cover 2016–2018. Currency values are shown only when the source provides them.
+            Live listing and dates from the official portal; archived OCDS releases cover 2016-2018. Currency values are shown only when the source provides them.
           </p>
         </div>
         <a href="https://bolpatra.gov.np/" target="_blank" rel="noreferrer" className="text-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '.25rem', fontSize: '.7rem', fontWeight: 600 }}>
